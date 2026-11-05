@@ -67,7 +67,17 @@ public final class RunLifecycle {
     /** Records that {@code node} finished and what the graph state looks like now. */
     public Run checkpoint(UUID runId, String node, Map<String, Object> state) {
         String stateJson = json.toJson(state);
-        int seq = store.latestCheckpoint(runId).map(Checkpoint::seq).orElse(0) + 1;
+
+        // A resumed graph replays its finished nodes. Those replays must not litter the timeline
+        // with duplicate entries: same node and same state means there is nothing new to record.
+        Optional<Checkpoint> latest = store.latestCheckpoint(runId);
+        if (latest.isPresent()
+                && latest.get().node().equals(node)
+                && stateJson.equals(latest.get().stateJson())) {
+            return get(runId);
+        }
+
+        int seq = latest.map(Checkpoint::seq).orElse(0) + 1;
         store.appendCheckpoint(new Checkpoint(runId, seq, node, stateJson, clock.millis()));
         return mutate(runId, current -> current.withState(stateJson, node, clock.millis()));
     }

@@ -24,10 +24,13 @@
   <modules>
     <module>duragent-core</module>
     <module>duragent-langgraph4j</module>
+    <module>duragent-spring</module>
   </modules>
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
+    <!-- Spring 6 resolves @PathVariable names from the class file, so keep parameter names. -->
+    <maven.compiler.parameters>true</maven.compiler.parameters>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 

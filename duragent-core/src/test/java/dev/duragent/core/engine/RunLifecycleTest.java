@@ -131,6 +131,21 @@ class RunLifecycleTest {
     }
 
     @Test
+    @DisplayName("re-recording the same node with the same state does not duplicate the timeline")
+    void repeatedCheckpointIsIgnored() {
+        Run run = runs.start("replay", Map.of());
+
+        runs.checkpoint(run.id(), "plan", Map.of("k", "v"));
+        Run afterReplay = runs.checkpoint(run.id(), "plan", Map.of("k", "v"));
+
+        assertEquals(1, runs.timeline(run.id()).size(), "a replay must not append a checkpoint");
+        assertEquals(1, afterReplay.version(), "and must not bump the run version either");
+
+        runs.checkpoint(run.id(), "plan", Map.of("k", "changed"));
+        assertEquals(2, runs.timeline(run.id()).size(), "a different state is a new checkpoint");
+    }
+
+    @Test
     @DisplayName("run and checkpoints survive a new store instance")
     void survivesRestart() {
         Run run = runs.start("durable", Map.of("k", "v"));

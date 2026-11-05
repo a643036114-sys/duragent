@@ -64,11 +64,16 @@ Give the library a notion of a *run* and plug it into LangGraph4j's node executi
 - [ ] `duragent diff <run_a> <run_b>` — step-by-step output diff
 - [ ] `duragent inspect <run_id>` — why did this step run twice?
 
-## 7. Spring Boot starter
+## 7. Spring Boot API (partly done)
 
-- [ ] auto-configuration, `application.yml` properties
-- [ ] Actuator endpoint: runs in flight, steps stuck, budget burn
-- [ ] demo: `docker compose up` → API + dashboard JSON
+- [x] `POST /api/runs`, `GET /api/runs/{id}` with status, timeline and budget
+- [x] pending approvals + approve/reject endpoints
+- [x] embedded poller that drains the queue
+- [x] two demo workflows (`refund-agent` with an approval gate, `summary-agent` without)
+- [x] end-to-end test through MockMvc
+- [ ] auto-configuration starter (a user should not hand-wire 12 beans)
+- [ ] Actuator endpoint: runs in flight, steps stuck, spend today
+- [ ] `docker compose up` with Postgres
 
 ## 8. Open-source launch
 

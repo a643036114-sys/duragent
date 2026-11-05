@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: duragent-demo
+  datasource:
+    # File-backed H2 by default: restart the app and the runs are still there.
+    url: jdbc:h2:file:./data/duragent;MODE=PostgreSQL;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: never
+
+duragent:
+  worker:
+    id: worker-local
+    lease: 30s
+    heartbeat: 5s
+    poll-interval: 500
+
+logging:
+  level:
+    dev.duragent: INFO

@@ -102,8 +102,35 @@ worker.pollOnce();   // claims and executes at most one run
 
 | Module | What it is |
 |---|---|
-| `duragent-core` | durable steps, runs, checkpoints, JDBC stores. No framework dependency. |
+| `duragent-core` | durable steps, runs, checkpoints, approvals, budgets, workers. No framework dependency. |
 | `duragent-langgraph4j` | wraps LangGraph4j node actions, nothing else. |
+| `duragent-spring` | demo app: HTTP API + one embedded worker. |
+
+## Run it
+
+```bash
+mvn -DskipTests install
+mvn -pl duragent-spring spring-boot:run
+```
+
+```bash
+curl -X POST localhost:8080/api/runs -H 'content-type: application/json' \
+     -d '{"workflow":"refund-agent","input":{"ticket":"T-9","amount":500}}'
+# {"id":"aaf0ccad-...","status":"PENDING"}
+
+curl localhost:8080/api/runs/<id>
+# {"status":"SUSPENDED","cursor":"plan","timeline":[{"node":"plan"}],"budget":{"usedTokens":1200}}
+
+curl localhost:8080/api/runs/<id>/approvals          # one PENDING approval on "refund"
+curl -X POST localhost:8080/api/approvals/<aid>/approve \
+     -H 'content-type: application/json' -d '{"by":"manager@corp"}'
+
+curl localhost:8080/api/runs/<id>
+# {"status":"COMPLETED","timeline":[plan,refund,notify],"budget":{"usedTokens":1200}}
+```
+
+The last line is the point: `plan` ran again on the way to `refund`, but the budget did not move.
+It replayed from the journal instead of calling the model a second time.
 
 ## Why another layer
 
@@ -151,7 +178,7 @@ four statements run on H2, PostgreSQL and MySQL.
 ## Quickstart
 
 ```bash
-mvn test                              # 50 tests on embedded H2, no setup
+mvn test                              # 54 tests on embedded H2, no setup
 mvn test -Dtest=CrashResumeDemoTest   # crash + resume in the console
 ```
 
@@ -169,9 +196,9 @@ mvn test -Dtest=PostgresCompatibilityTest \
 
 ## Status
 
-`0.1.0-SNAPSHOT`, milestones 1–5 of 8. Durable steps, runs, checkpoints, human approvals,
-budgets, workers and the LangGraph4j adapter work and are tested against H2 and PostgreSQL 16.
-Not production ready: no HTTP API yet.
+`0.1.0-SNAPSHOT`, milestones 1–5 and the HTTP API of 7. Durable steps, runs, checkpoints, human
+approvals, budgets, workers, the LangGraph4j adapter and a demo API all work and are tested
+against H2 and PostgreSQL 16. Not production ready: no auto-configuration starter, no CLI yet.
 
 See [`docs/roadmap.md`](docs/roadmap.md) and the decision records in [`docs/adr/`](docs/adr/).
 
