@@ -131,3 +131,21 @@ def test_unknown_run_is_a_404_and_unknown_workflow_is_a_400():
 def test_health():
     client, _ = make_client()
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_a_run_can_be_created_with_a_budget():
+    client, app = make_client()
+
+    created = client.post("/api/runs", json={
+        "workflow": "summary",
+        "input": {"topic": "x"},
+        "max_cost": 0.5,
+        "max_steps": 10,
+    })
+    run_id = created.json()["id"]
+    app.state.worker.poll_once()
+
+    budget = client.get(f"/api/runs/{run_id}").json()["budget"]
+    assert budget["max_cost"] == 0.5
+    assert budget["max_steps"] == 10
+    assert budget["steps"] == 2, "two nodes executed, so two steps were charged"

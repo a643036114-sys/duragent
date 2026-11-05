@@ -93,9 +93,12 @@ def claim(conn, worker_id: str, *, lease: float = 30.0,
             "UPDATE run SET status = 'RUNNING', updated_at = ? WHERE id = ? AND status = 'PENDING'",
             (now, run_id),
         ).rowcount
-        if updated == 0 and (get_run(conn, run_id) or Run("", "", "", {}, 0, 0)).status != RUNNING:
-            release(conn, run_id, worker_id)
-            continue
+        if updated == 0:
+            current = get_run(conn, run_id)
+            if current is None or current.status != RUNNING:
+                # It finished or was cancelled between the scan and the claim.
+                release(conn, run_id, worker_id)
+                continue
         return run_id
     return None
 

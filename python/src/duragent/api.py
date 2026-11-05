@@ -26,7 +26,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from duragent.approvals import approve, pending_approvals, reject
-from duragent.budgets import budget_for, usage
+from duragent.budgets import budget_for, set_budget, usage
 from duragent.runs import enqueue, get_run
 from duragent.steps import list_steps
 from duragent.worker import Handler, Worker
@@ -35,6 +35,8 @@ from duragent.worker import Handler, Worker
 class CreateRunRequest(BaseModel):
     workflow: str
     input: dict[str, Any] = Field(default_factory=dict)
+    max_cost: float | None = None
+    max_steps: int | None = None
 
 
 class DecisionRequest(BaseModel):
@@ -86,6 +88,8 @@ def create_app(
         if body.workflow not in workflows:
             raise HTTPException(status_code=400, detail=f"unknown workflow: {body.workflow}")
         run_id = enqueue(conn, body.workflow, body.input)
+        if body.max_cost is not None or body.max_steps is not None:
+            set_budget(conn, run_id, max_cost=body.max_cost, max_steps=body.max_steps)
         return {"id": run_id, "status": "PENDING"}
 
     @app.get("/api/runs/{run_id}")

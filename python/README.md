@@ -121,9 +121,25 @@ The honest limit: the function runs **at least once**, its result is stored **at
 A crash between "the side effect happened" and "the result was written" re-runs the function.
 Pass the step name to the downstream API as its idempotency key to close that window.
 
+## Known limitations
+
+A runtime that hides its edges is worse than one that names them.
+
+- **At least once, not exactly once.** A crash between "the side effect happened" and "the result
+  was written" re-runs the function. Pass the step name downstream as an idempotency key.
+- **The step name is the identity.** Renaming a step re-executes it, and a loop over the same node
+  needs `charge#1`, `charge#2`, ... until the runner owns that bookkeeping.
+- **The run id is the identity of the input.** Invoking a run again with a different payload
+  replays the old results.
+- **No retry policy.** A `FAILED` step retries on the next call, immediately. Backoff is the
+  caller's job.
+- **Approvals never expire.** A run can wait forever; an expiry policy is not implemented.
+- **SQLite only for now.** The SQL is portable, but there is no Postgres adapter yet.
+- **No authentication on the API.** It is a demo, not a deployment.
+
 ## Status
 
-This is step one: `run_step` plus six tests. Runs, approvals, budgets and the LangGraph
-decorator come next — the design is in [`../docs/adr/`](../docs/adr/).
+`0.1.0`: durable steps, the LangGraph wrapper, approvals, budgets, a worker queue and an HTTP
+API. 49 tests, including a real `kill -9` recovery test and a two-process journal test.
 
 A complete JVM implementation of the same design lives in [`../java/`](../java/).

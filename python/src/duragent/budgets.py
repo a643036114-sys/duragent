@@ -13,6 +13,7 @@ ledger that drifts by fractions of a cent is a ledger nobody trusts.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -102,6 +103,8 @@ def charge(conn, run_id: str, *, tokens: int = 0, cost: float = 0.0, steps: int 
     """
     if tokens < 0 or cost < 0 or steps < 0:
         raise ValueError("a charge cannot be negative")
+    if not math.isfinite(cost):
+        raise ValueError(f"cost must be a finite number, got {cost!r}")
 
     before = usage(conn, run_id)
     if before is None:

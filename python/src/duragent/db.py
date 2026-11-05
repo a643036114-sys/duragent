@@ -1,12 +1,19 @@
-"""Storage: two tables, a handful of statements.
+"""Storage: the tables, and a connection that is safe to share between threads.
 
-SQLite is the default because it makes the demo run with zero setup. The SQL is
-plain enough to work on Postgres unchanged; only the driver differs.
+SQLite connections are not meant to be used from several threads at once. A
+worker does exactly that - the heartbeat thread renews a lease while the main
+thread writes a step result - and the failure mode is ugly: an
+``InterfaceError: bad parameter or other API misuse`` thrown at a random call
+site, which is why the wrapper below exists.
+
+Every statement runs under one lock and returns materialised rows, so a caller
+can never hold a half-used cursor while another thread writes.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 STEP_TABLE = """
 CREATE TABLE IF NOT EXISTS step_record (
@@ -52,7 +59,6 @@ CREATE TABLE IF NOT EXISTS budget (
 )
 """
 
-
 RUN_TABLE = """
 CREATE TABLE IF NOT EXISTS run (
     id          TEXT PRIMARY KEY,
@@ -75,23 +81,71 @@ CREATE TABLE IF NOT EXISTS run_lease (
 """
 
 
-def connect(path: str = ":memory:") -> sqlite3.Connection:
-    """Open a database and make sure the tables exist.
+class Result:
+    """Rows already fetched, plus the row count. Safe to keep around."""
 
-    ``check_same_thread=False`` because a worker renews leases from a heartbeat
-    thread while the main thread executes a handler.
-    """
-    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)  # autocommit
-    conn.row_factory = sqlite3.Row
+    def __init__(self, rows: list, rowcount: int) -> None:
+        self._rows = rows
+        self.rowcount = rowcount
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list:
+        return list(self._rows)
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+
+class Connection:
+    """A sqlite3 connection that serialises statements across threads."""
+
+    def __init__(self, inner: sqlite3.Connection) -> None:
+        self._inner = inner
+        self._lock = threading.RLock()
+        self.row_factory = inner.row_factory
+
+    def execute(self, sql: str, parameters=()) -> Result:
+        with self._lock:
+            cursor = self._inner.execute(sql, parameters)
+            rows = cursor.fetchall() if cursor.description else []
+            return Result(rows, cursor.rowcount)
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            self._inner.executescript(script)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._inner.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._inner.close()
+
+    def inner(self) -> sqlite3.Connection:
+        return self._inner
+
+
+def connect(path: str = ":memory:") -> Connection:
+    """Open a database and make sure the tables exist."""
+    inner = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    inner.row_factory = sqlite3.Row
+    # Two processes writing at the same time: wait instead of failing with
+    # "database is locked" on the first collision.
+    inner.execute("PRAGMA busy_timeout = 5000")
     if path != ":memory:":
-        conn.execute("PRAGMA journal_mode=WAL")
+        inner.execute("PRAGMA journal_mode=WAL")
+    conn = Connection(inner)
     init_schema(conn)
     return conn
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
-    conn.execute(STEP_TABLE)
-    conn.execute(APPROVAL_TABLE)
-    conn.execute(BUDGET_TABLE)
-    conn.execute(RUN_TABLE)
-    conn.execute(LEASE_TABLE)
+def init_schema(conn: Connection) -> None:
+    for statement in (STEP_TABLE, APPROVAL_TABLE, BUDGET_TABLE, RUN_TABLE, LEASE_TABLE,
+                      "CREATE INDEX IF NOT EXISTS idx_run_status ON run(status)"):
+        conn.execute(statement)

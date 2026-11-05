@@ -58,13 +58,11 @@ class Worker:
         self.clock = clock
         self._in_flight: set[str] = set()
         self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._heartbeat_loop, name=f"duragent-heartbeat-{worker_id}", daemon=True
-        )
-        self._thread.start()
+        self._thread: threading.Thread | None = None
 
     def poll_once(self) -> bool:
         """Claim and execute at most one run. Returns False when the queue is empty."""
+        self._ensure_heartbeat()
         run_id = claim(self.conn, self.worker_id, lease=self.lease, clock=self.clock)
         if run_id is None:
             return False
@@ -93,7 +91,12 @@ class Worker:
         return True
 
     def drain(self, max_runs: int = 100) -> int:
-        """Execute until the queue is empty. Returns how many runs were executed."""
+        """Execute until the queue is empty. Returns how many runs were executed.
+
+        Stops at the first failing run and lets the exception through. A worker
+        that should survive bad runs loops over :meth:`poll_once` itself and
+        catches - which is exactly what the HTTP poller does.
+        """
         executed = 0
         while executed < max_runs and self.poll_once():
             executed += 1
@@ -101,13 +104,23 @@ class Worker:
 
     def close(self) -> None:
         self._stop.set()
-        self._thread.join(timeout=2)
+        if self._thread is not None:
+            self._thread.join(timeout=2)
 
     def __enter__(self) -> "Worker":
         return self
 
     def __exit__(self, *exc_info) -> None:
         self.close()
+
+    def _ensure_heartbeat(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(
+                target=self._heartbeat_loop,
+                name=f"duragent-heartbeat-{self.worker_id}",
+                daemon=True,
+            )
+            self._thread.start()
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.wait(self.heartbeat_every):

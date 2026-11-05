@@ -99,9 +99,11 @@ def run_step(
     ``before_execute`` is the gate: it runs only when the step is really about to
     execute (never on a replay), and raising from it aborts the step.
     """
+    if not isinstance(step_name, str) or not step_name.strip():
+        raise ValueError("step_name must be a non-empty string")
+
     existing = find_step(conn, run_id, step_name)
     now = clock()
-
     if existing is not None and existing.status == "SUCCEEDED":
         return json.loads(existing.output_json)  # replay: the whole point
 
@@ -142,10 +144,26 @@ def run_step(
         raise
 
     # The side effect already happened; from here on we only record it.
+    try:
+        output_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    except TypeError as exc:
+        # The work is done but cannot be described in the journal. Failing the step is
+        # the honest choice: it keeps a trace, and a retry re-runs it deliberately.
+        conn.execute(
+            "UPDATE step_record SET status = 'FAILED', error_text = ?, finished_at = ?"
+            " WHERE run_id = ? AND step_key = ? AND status = 'RUNNING'",
+            (f"TypeError: the step result is not JSON-serialisable: {exc}",
+             clock(), run_id, step_name),
+        )
+        raise TypeError(
+            f"step {step_name!r} returned a value that cannot be stored as JSON, "
+            f"so a replay would not be able to restore it: {exc}"
+        ) from exc
+
     conn.execute(
         "UPDATE step_record SET status = 'SUCCEEDED', output_json = ?, finished_at = ?"
         " WHERE run_id = ? AND step_key = ? AND status = 'RUNNING'",
-        (json.dumps(result, ensure_ascii=False, sort_keys=True), clock(), run_id, step_name),
+        (output_json, clock(), run_id, step_name),
     )
     return result
 
