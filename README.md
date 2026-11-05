@@ -64,9 +64,10 @@ Duragent journals the node's **result** under a stable key and replays it. That 
 ## Status
 
 `0.1.0`, the Python port covers durable steps, the LangGraph wrapper, approvals with deadlines,
-budgets, retries, a worker queue with leases and a sweep thread, input fingerprints, a CLI and an
-HTTP API — 82 tests with PostgreSQL, 76 on SQLite, six runnable demos, including a real `kill -9`
-recovery test and a two-process journal test. Known limitations are listed in
+budgets, retries, a worker queue with leases and a sweep thread, input fingerprints, a CLI, an
+HTTP API and a real-model example — 86 tests with PostgreSQL, 80 on SQLite, six runnable demos,
+including a real `kill -9` recovery test, a two-process journal test and a 200-run load benchmark
+with zero duplicate steps. Known limitations are listed in
 [`python/README.md`](python/README.md#known-limitations). The JVM implementation is feature
 complete up to the same demo API.
 

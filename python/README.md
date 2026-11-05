@@ -152,6 +152,31 @@ curl -X POST localhost:8000/api/approvals/<aid>/approve \
 
 `GET /metrics` reports runs by status, steps by status and total spend in Prometheus text format.
 
+## Real model
+
+`examples/real_llm_demo.py` calls an actual chat completion, prices it from the provider's usage
+report and crashes between two nodes:
+
+```bash
+export DURAGENT_LLM_API_KEY=sk-...
+python examples/real_llm_demo.py
+```
+
+Works with any OpenAI-compatible endpoint (`DURAGENT_LLM_BASE_URL`, `DURAGENT_LLM_MODEL`). After
+the crash the run restarts and the token count does not move: the first node was replayed, not
+re-billed. CI runs it against a fake provider, so the request shape and the replay behaviour are
+tested even without a key.
+
+## Load
+
+```bash
+python benchmarks/load_test.py --runs 200 --workers 4
+# runs: 200  completed: 200  steps: 600  duplicated_runs: 0
+```
+
+The point of the benchmark is not speed, it is the last line: with four workers competing for the
+same SQLite file, no run executes a step twice.
+
 ## What it guarantees
 
 | Situation | Behaviour |

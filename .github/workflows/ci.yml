@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: duragent
+          POSTGRES_PASSWORD: duragent
+          POSTGRES_DB: duragent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: install
+        run: pip install -e "./python[dev,api,postgres,langgraph]"
+
+      - name: test (sqlite, includes the rest of the suite)
+        working-directory: python
+        run: python -m pytest -q
+
+      - name: test (postgres)
+        working-directory: python
+        env:
+          DURAGENT_PG_URL: postgresql://duragent:duragent@127.0.0.1:5432/duragent
+        run: python -m pytest -q tests/test_postgres.py
