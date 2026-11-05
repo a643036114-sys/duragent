@@ -23,6 +23,15 @@ from duragent.approvals import (
     reject,
     request_approval,
 )
+from duragent.budgets import (
+    Budget,
+    BudgetExceeded,
+    Usage,
+    budget_for,
+    charge,
+    set_budget,
+    usage,
+)
 from duragent.db import connect, init_schema
 from duragent.graph import Journal, new_run_id
 from duragent.steps import (
@@ -51,4 +60,11 @@ __all__ = [
     "latest_approval",
     "pending_approvals",
     "request_approval",
+    "Budget",
+    "BudgetExceeded",
+    "Usage",
+    "budget_for",
+    "set_budget",
+    "charge",
+    "usage",
 ]

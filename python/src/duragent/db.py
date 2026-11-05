@@ -38,6 +38,20 @@ CREATE TABLE IF NOT EXISTS approval (
 )
 """
 
+BUDGET_TABLE = """
+CREATE TABLE IF NOT EXISTS budget (
+    run_id            TEXT PRIMARY KEY,
+    max_tokens        INTEGER,
+    max_cost_micros   INTEGER,
+    max_steps         INTEGER,
+    used_tokens       INTEGER NOT NULL DEFAULT 0,
+    used_cost_micros  INTEGER NOT NULL DEFAULT 0,
+    used_steps        INTEGER NOT NULL DEFAULT 0,
+    started_at        REAL NOT NULL,
+    updated_at        REAL NOT NULL
+)
+"""
+
 
 def connect(path: str = ":memory:") -> sqlite3.Connection:
     """Open a database and make sure the tables exist."""
@@ -52,3 +66,4 @@ def connect(path: str = ":memory:") -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute(STEP_TABLE)
     conn.execute(APPROVAL_TABLE)
+    conn.execute(BUDGET_TABLE)

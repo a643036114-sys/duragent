@@ -49,6 +49,21 @@ def plan(state):
 See [`examples/crash_demo.py`](examples/crash_demo.py) for a three-node graph that crashes in the
 middle and resumes without repeating the first node.
 
+## Budgets
+
+```python
+set_budget(conn, run_id, max_cost=0.50, max_tokens=200_000, max_steps=30)
+
+# inside a node, where the cost is actually known
+journal.charge(cost=0.02, tokens=1200)
+```
+
+A charge is one conditional `UPDATE`, so two workers cannot spend the last cent twice. When a
+charge does not fit, nothing is billed: the run stops with `BudgetExceeded`, the step is released
+(not marked failed), and raising the cap resumes it where it left off.
+
+Money is stored as integer micro-units. A float ledger drifts.
+
 ## What it guarantees
 
 | Situation | Behaviour |

@@ -13,6 +13,7 @@ import uuid
 from typing import Any, Callable
 
 from duragent.approvals import ApprovalRejected, ApprovalRequired, require_approval
+from duragent.budgets import charge as charge_budget
 from duragent.steps import DEFAULT_LEASE_SECONDS, StepInProgress, run_step
 
 __all__ = ["Journal", "new_run_id", "StepInProgress", "ApprovalRequired", "ApprovalRejected"]
@@ -87,7 +88,7 @@ class Journal:
                     self.conn,
                     self.run_id,
                     step_name,
-                    lambda: fn(state),
+                    lambda: self._work(state, fn),
                     before_execute=gate,
                     lease=self.lease,
                     clock=self.clock,
@@ -97,3 +98,16 @@ class Journal:
             return node
 
         return wrap if fn is None else wrap(fn)
+
+    def charge(self, *, tokens: int = 0, cost: float = 0.0, steps: int = 0):
+        """节点里上报本次花费。没有设置预算时是空操作。"""
+        return charge_budget(self.conn, self.run_id, tokens=tokens, cost=cost, steps=steps)
+
+    def _work(self, state, fn):
+        """真正执行时做的事：跑节点，然后扣掉这一步的额度。
+
+        扣费放在 fn 之后，是因为回放根本不会走到这里——**回放不花钱**。
+        """
+        result = fn(state)
+        charge_budget(self.conn, self.run_id, steps=1)
+        return result
