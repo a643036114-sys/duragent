@@ -63,6 +63,7 @@ def chat(messages: list[dict[str, str]], *, timeout: float = 60.0) -> tuple[str,
         int(usage_block.get("prompt_tokens", 0)) * PRICE_IN
         + int(usage_block.get("completion_tokens", 0)) * PRICE_OUT
     ) / 1_000_000
+    print(f"  [llm] call {CALLS['n']}: {tokens} tokens, cost {cost:.6f}")
     return text, tokens, cost
 
 
