@@ -16,7 +16,7 @@ normal, so the caller just moves to the next candidate.
 from __future__ import annotations
 
 import json
-import sqlite3
+from duragent.db import Connection, IntegrityError
 import time
 import uuid
 from dataclasses import dataclass
@@ -85,7 +85,8 @@ def claim(conn, worker_id: str, *, lease: float = 30.0,
     now = clock()
     leased_until = now + lease
 
-    for (run_id,) in _claimable(conn, now):
+    for row in _claimable(conn, now):
+        run_id = row["id"]
         if not _try_acquire(conn, run_id, worker_id, leased_until, now):
             continue
         # Promote PENDING -> RUNNING, but only if nobody moved it meanwhile.
@@ -121,7 +122,7 @@ def release(conn, run_id: str, worker_id: str) -> bool:
     ).rowcount > 0
 
 
-def _claimable(conn, now: float) -> list[tuple[str]]:
+def _claimable(conn, now: float) -> list:
     rows = conn.execute(
         "SELECT r.id FROM run r"
         " LEFT JOIN run_lease l ON l.run_id = r.id"
@@ -130,7 +131,7 @@ def _claimable(conn, now: float) -> list[tuple[str]]:
         " ORDER BY r.created_at LIMIT 10",
         (now,),
     ).fetchall()
-    return [(row["id"],) for row in rows]
+    return rows
 
 
 def _try_acquire(conn, run_id: str, worker_id: str, leased_until: float, now: float) -> bool:
@@ -141,7 +142,7 @@ def _try_acquire(conn, run_id: str, worker_id: str, leased_until: float, now: fl
             (run_id, worker_id, leased_until, now, now),
         )
         return True
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         # A lease exists. Take it over only if it has expired.
         return conn.execute(
             "UPDATE run_lease SET worker_id = ?, leased_until = ?, claimed_at = ?, heartbeat_at = ?"

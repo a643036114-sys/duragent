@@ -121,6 +121,22 @@ The honest limit: the function runs **at least once**, its result is stored **at
 A crash between "the side effect happened" and "the result was written" re-runs the function.
 Pass the step name to the downstream API as its idempotency key to close that window.
 
+## PostgreSQL
+
+```bash
+docker compose up -d postgres          # from the repository root
+pip install -e ".[postgres]"
+
+DURAGENT_PG_URL=postgresql://duragent:duragent@127.0.0.1:5432/duragent pytest -q
+```
+
+```python
+conn = connect("postgresql://duragent:duragent@127.0.0.1:5432/duragent")
+```
+
+Same SQL, same behaviour: the backend only translates `?` to `%s` and maps unique violations.
+Six of the tests run twice, once per backend.
+
 ## Known limitations
 
 A runtime that hides its edges is worse than one that names them.
@@ -134,7 +150,8 @@ A runtime that hides its edges is worse than one that names them.
 - **No retry policy.** A `FAILED` step retries on the next call, immediately. Backoff is the
   caller's job.
 - **Approvals never expire.** A run can wait forever; an expiry policy is not implemented.
-- **SQLite only for now.** The SQL is portable, but there is no Postgres adapter yet.
+- **No schema migrations.** The tables are created if missing; an older schema is detected and
+  refused with a clear error rather than silently misreading it. There is no upgrade path.
 - **No authentication on the API.** It is a demo, not a deployment.
 
 ## Status

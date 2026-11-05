@@ -2,7 +2,7 @@
 
 Where the project stands, so a break of a few days does not cost a day of re-reading.
 
-*Last updated: 2026-11-05, after the hardening pass (`ff034aa`).*
+*Last updated: 2026-11-05, after the PostgreSQL adapter.*
 
 ## What works
 
@@ -15,9 +15,11 @@ Where the project stands, so a break of a few days does not cost a day of re-rea
 | Workers claim runs, die, get taken over | `runs.py` + `worker.py` | `tests/test_worker.py` |
 | HTTP API: create, inspect, approve | `python/src/duragent/api.py` | `tests/test_api.py` |
 | `kill -9` mid-step is recovered | — | `tests/test_hardening.py` |
+| SQLite **and** PostgreSQL | `python/src/duragent/db.py` | `tests/test_postgres.py` |
 
 ```bash
-cd python && python -m pytest -q      # 49 passed
+cd python && python -m pytest -q                                   # 49 passed, 6 skipped
+DURAGENT_PG_URL=postgresql://... python -m pytest -q               # 55 passed
 ```
 
 Demos: `examples/crash_demo.py`, `approval_demo.py`, `budget_demo.py`, `worker_demo.py`,
@@ -30,13 +32,11 @@ step-name identity, no retry policy, approvals never expire, SQLite only, no aut
 
 ## Next, in the order I would do it
 
-1. **Postgres adapter.** The SQL is already portable; it needs a `psycopg` thin layer, a
-   `docker-compose.yml`, and the same tests parametrised over both backends. This is what turns
-   "SQLite demo" into "usable".
-2. **Retry with backoff.** A `FAILED` step retries immediately today. Model calls return 529 and
+1. **Retry with backoff.** A `FAILED` step retries immediately today. Model calls return 529 and
    need exponential backoff; the journal already has `attempt`, so the policy has a place to live.
-3. **Approval expiry.** A run parked forever is a leak; add `expires_at` and a sweep.
-4. **Publish.** README with a GIF, launch posts. Not before 1–3.
+2. **Approval expiry.** A run parked forever is a leak; add `expires_at` and a sweep.
+3. **Schema migrations.** There is none; an old table is refused, not upgraded.
+4. **Publish.** README with a GIF, launch posts. Not before 1–2.
 
 Also open: the JVM tree in `java/` has the same "non-serialisable result leaves the claim
 RUNNING" bug that was fixed in Python. Worth fixing when the Java tree gets touched again.

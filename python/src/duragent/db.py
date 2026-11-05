@@ -1,13 +1,16 @@
-"""Storage: the tables, and a connection that is safe to share between threads.
+"""Storage backends: SQLite by default, PostgreSQL when you have one.
 
-SQLite connections are not meant to be used from several threads at once. A
-worker does exactly that - the heartbeat thread renews a lease while the main
-thread writes a step result - and the failure mode is ugly: an
-``InterfaceError: bad parameter or other API misuse`` thrown at a random call
-site, which is why the wrapper below exists.
+The SQL is written once, with ``?`` placeholders and portable column types, and
+the backend translates it. That keeps every query readable and means the two
+implementations cannot drift apart.
 
-Every statement runs under one lock and returns materialised rows, so a caller
-can never hold a half-used cursor while another thread writes.
+Two things the wrapper has to provide on top of a raw driver:
+
+* **thread safety.** A worker's heartbeat thread renews a lease while the main
+  thread writes a step result. SQLite connections are not meant for that, and the
+  failure is an ``InterfaceError`` at a random call site.
+* **materialised rows.** A caller must never hold a half-used cursor while
+  another thread writes, so ``execute`` fetches everything before returning.
 """
 
 from __future__ import annotations
@@ -15,70 +18,73 @@ from __future__ import annotations
 import sqlite3
 import threading
 
-STEP_TABLE = """
-CREATE TABLE IF NOT EXISTS step_record (
-    run_id        TEXT    NOT NULL,
-    step_key      TEXT    NOT NULL,
-    status        TEXT    NOT NULL,        -- RUNNING | SUCCEEDED | FAILED
-    attempt       INTEGER NOT NULL,
-    output_json   TEXT,
-    error_text    TEXT,
-    started_at    REAL    NOT NULL,        -- epoch seconds
-    finished_at   REAL,
-    lease_until   REAL    NOT NULL,        -- a dead worker's claim expires
-    PRIMARY KEY (run_id, step_key)
-)
-"""
+SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS step_record (
+        run_id        TEXT    NOT NULL,
+        step_key      TEXT    NOT NULL,
+        status        TEXT    NOT NULL,        -- RUNNING | SUCCEEDED | FAILED
+        attempt       INTEGER NOT NULL,
+        output_json   TEXT,
+        error_text    TEXT,
+        started_at    DOUBLE PRECISION NOT NULL,
+        finished_at   DOUBLE PRECISION,
+        lease_until   DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY (run_id, step_key)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS approval (
+        id            TEXT NOT NULL,
+        run_id        TEXT NOT NULL,
+        node          TEXT NOT NULL,
+        reason        TEXT,
+        status        TEXT NOT NULL,           -- PENDING | APPROVED | REJECTED
+        requested_at  DOUBLE PRECISION NOT NULL,
+        decided_at    DOUBLE PRECISION,
+        decided_by    TEXT,
+        comment       TEXT,
+        PRIMARY KEY (id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS budget (
+        run_id            TEXT PRIMARY KEY,
+        max_tokens        BIGINT,
+        max_cost_micros   BIGINT,
+        max_steps         INTEGER,
+        used_tokens       BIGINT       NOT NULL DEFAULT 0,
+        used_cost_micros  BIGINT       NOT NULL DEFAULT 0,
+        used_steps        INTEGER      NOT NULL DEFAULT 0,
+        started_at        DOUBLE PRECISION NOT NULL,
+        updated_at        DOUBLE PRECISION NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS run (
+        id          TEXT PRIMARY KEY,
+        workflow    TEXT NOT NULL,
+        status      TEXT NOT NULL,             -- PENDING | RUNNING | SUSPENDED | COMPLETED | FAILED | CANCELED
+        input_json  TEXT,
+        created_at  DOUBLE PRECISION NOT NULL,
+        updated_at  DOUBLE PRECISION NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS run_lease (
+        run_id          TEXT PRIMARY KEY,
+        worker_id       TEXT NOT NULL,
+        leased_until    DOUBLE PRECISION NOT NULL,
+        claimed_at      DOUBLE PRECISION NOT NULL,
+        heartbeat_at    DOUBLE PRECISION NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_run_status ON run(status)",
+]
 
-APPROVAL_TABLE = """
-CREATE TABLE IF NOT EXISTS approval (
-    id            TEXT NOT NULL,
-    run_id        TEXT NOT NULL,
-    node          TEXT NOT NULL,
-    reason        TEXT,
-    status        TEXT NOT NULL,           -- PENDING | APPROVED | REJECTED
-    requested_at  REAL NOT NULL,
-    decided_at    REAL,
-    decided_by    TEXT,
-    comment       TEXT,
-    PRIMARY KEY (id)
-)
-"""
 
-BUDGET_TABLE = """
-CREATE TABLE IF NOT EXISTS budget (
-    run_id            TEXT PRIMARY KEY,
-    max_tokens        INTEGER,
-    max_cost_micros   INTEGER,
-    max_steps         INTEGER,
-    used_tokens       INTEGER NOT NULL DEFAULT 0,
-    used_cost_micros  INTEGER NOT NULL DEFAULT 0,
-    used_steps        INTEGER NOT NULL DEFAULT 0,
-    started_at        REAL NOT NULL,
-    updated_at        REAL NOT NULL
-)
-"""
-
-RUN_TABLE = """
-CREATE TABLE IF NOT EXISTS run (
-    id          TEXT PRIMARY KEY,
-    workflow    TEXT NOT NULL,
-    status      TEXT NOT NULL,             -- PENDING | RUNNING | SUSPENDED | COMPLETED | FAILED | CANCELED
-    input_json  TEXT,
-    created_at  REAL NOT NULL,
-    updated_at  REAL NOT NULL
-)
-"""
-
-LEASE_TABLE = """
-CREATE TABLE IF NOT EXISTS run_lease (
-    run_id          TEXT PRIMARY KEY,
-    worker_id       TEXT NOT NULL,
-    leased_until    REAL NOT NULL,
-    claimed_at      REAL NOT NULL,
-    heartbeat_at    REAL NOT NULL
-)
-"""
+class IntegrityError(Exception):
+    """A unique constraint lost a race. The same meaning on every backend."""
 
 
 class Result:
@@ -101,51 +107,121 @@ class Result:
         return len(self._rows)
 
 
-class Connection:
-    """A sqlite3 connection that serialises statements across threads."""
+class SqliteBackend:
+    name = "sqlite"
 
-    def __init__(self, inner: sqlite3.Connection) -> None:
-        self._inner = inner
+    def __init__(self, path: str) -> None:
+        self._inner = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        self._inner.row_factory = sqlite3.Row
         self._lock = threading.RLock()
-        self.row_factory = inner.row_factory
+        # Two processes writing at once: wait instead of failing with
+        # "database is locked" on the first collision.
+        self._inner.execute("PRAGMA busy_timeout = 5000")
+        if path != ":memory:":
+            self._inner.execute("PRAGMA journal_mode=WAL")
 
     def execute(self, sql: str, parameters=()) -> Result:
         with self._lock:
-            cursor = self._inner.execute(sql, parameters)
+            try:
+                cursor = self._inner.execute(sql, parameters)
+            except sqlite3.IntegrityError as exc:
+                raise IntegrityError(str(exc)) from exc
             rows = cursor.fetchall() if cursor.description else []
             return Result(rows, cursor.rowcount)
-
-    def executescript(self, script: str) -> None:
-        with self._lock:
-            self._inner.executescript(script)
-
-    def commit(self) -> None:
-        with self._lock:
-            self._inner.commit()
 
     def close(self) -> None:
         with self._lock:
             self._inner.close()
 
-    def inner(self) -> sqlite3.Connection:
-        return self._inner
+
+class PostgresBackend:
+    name = "postgres"
+
+    def __init__(self, url: str) -> None:
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:  # pragma: no cover - depends on the environment
+            raise RuntimeError(
+                "PostgreSQL support needs psycopg: pip install 'duragent[postgres]'"
+            ) from exc
+
+        self._psycopg = psycopg
+        self._inner = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+        self._lock = threading.RLock()
+
+    def execute(self, sql: str, parameters=()) -> Result:
+        # Our SQL says "?", Postgres says "%s". One translation, one place.
+        translated = sql.replace("?", "%s")
+        with self._lock, self._inner.cursor() as cursor:
+            try:
+                cursor.execute(translated, parameters)
+            except self._psycopg.errors.UniqueViolation as exc:
+                raise IntegrityError(str(exc)) from exc
+            rows = cursor.fetchall() if cursor.description else []
+            return Result(rows, cursor.rowcount)
+
+    def close(self) -> None:
+        with self._lock:
+            self._inner.close()
 
 
-def connect(path: str = ":memory:") -> Connection:
-    """Open a database and make sure the tables exist."""
-    inner = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
-    inner.row_factory = sqlite3.Row
-    # Two processes writing at the same time: wait instead of failing with
-    # "database is locked" on the first collision.
-    inner.execute("PRAGMA busy_timeout = 5000")
-    if path != ":memory:":
-        inner.execute("PRAGMA journal_mode=WAL")
-    conn = Connection(inner)
-    init_schema(conn)
+class Connection:
+    """Backend-agnostic connection. Everything in the library talks to this."""
+
+    def __init__(self, backend) -> None:
+        self._backend = backend
+
+    @property
+    def backend_name(self) -> str:
+        return self._backend.name
+
+    def execute(self, sql: str, parameters=()) -> Result:
+        return self._backend.execute(sql, parameters)
+
+    def close(self) -> None:
+        self._backend.close()
+
+    def __enter__(self) -> "Connection":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+
+def connect(target: str = ":memory:") -> Connection:
+    """Open a database.
+
+    ``:memory:`` or a path -> SQLite. A ``postgresql://`` URL -> PostgreSQL.
+    """
+    if target.startswith(("postgresql://", "postgres://")):
+        backend = PostgresBackend(target)
+    else:
+        backend = SqliteBackend(target)
+
+    conn = Connection(backend)
+    for statement in SCHEMA:
+        conn.execute(statement)
+    _verify_schema(conn)
     return conn
 
 
+def _verify_schema(conn: Connection) -> None:
+    """Fail loudly on a table that exists but was created by an older version.
+
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op when the table is already there, so a
+    stale schema would otherwise surface as a confusing "column does not exist" at
+    the first query. There are no migrations yet; the honest thing is to say so.
+    """
+    try:
+        conn.execute("SELECT started_at FROM step_record WHERE 1 = 0")
+    except Exception as exc:
+        raise RuntimeError(
+            "the database has an incompatible schema, probably created by an older "
+            "version. Drop the duragent tables or point at a fresh database."
+        ) from exc
+
+
 def init_schema(conn: Connection) -> None:
-    for statement in (STEP_TABLE, APPROVAL_TABLE, BUDGET_TABLE, RUN_TABLE, LEASE_TABLE,
-                      "CREATE INDEX IF NOT EXISTS idx_run_status ON run(status)"):
+    for statement in SCHEMA:
         conn.execute(statement)

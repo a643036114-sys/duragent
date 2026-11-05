@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import TypedDict
 
@@ -89,7 +90,7 @@ def refund_handler(conn):
     return handle
 
 
-conn = connect("demo.db")
+conn = connect(os.environ.get("DURAGENT_DB", "demo.db"))
 app = create_app(
     conn,
     {"summary": summary_handler(conn), "refund": refund_handler(conn)},

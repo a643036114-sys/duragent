@@ -7,7 +7,7 @@ Read this file top to bottom and you have read the project. Everything else
 from __future__ import annotations
 
 import json
-import sqlite3
+from duragent.db import Connection, IntegrityError
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
@@ -46,7 +46,7 @@ class StepRecord:
     lease_until: float
 
 
-def find_step(conn: sqlite3.Connection, run_id: str, step_name: str) -> StepRecord | None:
+def find_step(conn: Connection, run_id: str, step_name: str) -> StepRecord | None:
     """Read the journal entry for this step, if it exists."""
     row = conn.execute(
         "SELECT * FROM step_record WHERE run_id = ? AND step_key = ?",
@@ -55,7 +55,7 @@ def find_step(conn: sqlite3.Connection, run_id: str, step_name: str) -> StepReco
     return None if row is None else _to_record(row)
 
 
-def list_steps(conn: sqlite3.Connection, run_id: str) -> list[StepRecord]:
+def list_steps(conn: Connection, run_id: str) -> list[StepRecord]:
     """Every journal entry of a run, in the order the steps started."""
     rows = conn.execute(
         "SELECT * FROM step_record WHERE run_id = ? ORDER BY started_at, step_key",
@@ -79,7 +79,7 @@ def _to_record(row) -> StepRecord:
 
 
 def run_step(
-    conn: sqlite3.Connection,
+    conn: Connection,
     run_id: str,
     step_name: str,
     fn: Callable[[], T],
@@ -115,7 +115,7 @@ def run_step(
                 " VALUES (?, ?, 'RUNNING', 1, ?, ?)",
                 (run_id, step_name, now, lease_until),
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             # Another worker inserted between our read and our write.
             return _replay_or_raise(conn, run_id, step_name)
     elif existing.status == "RUNNING":
@@ -181,7 +181,7 @@ def _claim(conn, condition: str, run_id: str, step_name: str, now: float,
         raise StepInProgress(f"{run_id}/{step_name} was taken by another worker")
 
 
-def _replay_or_raise(conn: sqlite3.Connection, run_id: str, step_name: str) -> Any:
+def _replay_or_raise(conn: Connection, run_id: str, step_name: str) -> Any:
     """Someone beat us to the insert: replay their result if they already finished."""
     record = find_step(conn, run_id, step_name)
     if record is not None and record.status == "SUCCEEDED":
