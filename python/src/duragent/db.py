@@ -68,7 +68,8 @@ SCHEMA = [
         status      TEXT NOT NULL,             -- PENDING | RUNNING | SUSPENDED | COMPLETED | FAILED | CANCELED
         input_json  TEXT,
         created_at  DOUBLE PRECISION NOT NULL,
-        updated_at  DOUBLE PRECISION NOT NULL
+        updated_at  DOUBLE PRECISION NOT NULL,
+        not_before  DOUBLE PRECISION           -- set while a step backs off
     )
     """,
     """
@@ -89,6 +90,7 @@ SCHEMA = [
 # ADD COLUMN, which both SQLite and PostgreSQL understand.
 ADDED_COLUMNS = [
     ("approval", "expires_at", "DOUBLE PRECISION"),
+    ("run", "not_before", "DOUBLE PRECISION"),
 ]
 
 

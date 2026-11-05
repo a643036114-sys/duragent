@@ -114,12 +114,13 @@ journal.durable("call-llm", call_model, retry=Retry(max_attempts=4, base=1.0, mu
 ```
 
 Waits are 1s, 2s, 4s, capped by `max_delay`. While a step is backing off it raises `RetryLater`
-instead of running, so a model that returns 529 is not hammered. After `max_attempts` it raises
-`RetriesExhausted` and never executes again.
+instead of running, so a model that returns 529 is not hammered. The worker stores a `not_before`
+deadline on the run, and the claim query skips it until then - the run comes back on time, not
+whenever a lease happens to expire. After `max_attempts` it raises `RetriesExhausted` and never
+executes again.
 
-No schema change is needed: the wait is computed from the `attempt` and `finished_at` the journal
-already stores. A worker keeps the lease during a backoff, and the lease expiring is what brings
-the run back — so the effective floor is the lease length.
+No extra column on the journal: the wait is computed from the `attempt` and `finished_at` that were
+already stored.
 
 ## Approvals
 
@@ -175,13 +176,12 @@ A runtime that hides its edges is worse than one that names them.
   needs `charge#1`, `charge#2`, ... until the runner owns that bookkeeping.
 - **The run id is the identity of the input.** Invoking a run again with a different payload
   replays the old results.
-- **Backoff is coarse when a worker is involved.** The step knows exactly when it is ready, but
-  the run only comes back when a worker's lease expires. Precise scheduling needs a per-run
-  "not before" column, which does not exist yet.
-- **Approval expiry is lazy.** An overdue request is closed by the next worker that reaches the
-  gate, or by `expire_stale(conn)` that you schedule yourself. There is no background timer.
-- **No schema migrations.** The tables are created if missing; an older schema is detected and
-  refused with a clear error rather than silently misreading it. There is no upgrade path.
+- **Approval expiry needs a running worker.** `expire_stale` is called by the worker's sweep
+  thread every `sweep_every` seconds; if no worker runs, nothing closes overdue approvals - the
+  gate checks the deadline itself when a run is picked up again, but a suspended run is never
+  picked up.
+- **Migrations are additive only.** A missing column is added automatically; a changed type or a
+  dropped column is refused, not upgraded.
 - **No authentication on the API.** It is a demo, not a deployment.
 
 ## Status

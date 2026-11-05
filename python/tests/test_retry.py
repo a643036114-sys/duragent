@@ -98,15 +98,18 @@ def test_without_a_policy_a_failure_retries_immediately():
     assert len(calls) == 2, "the default stays the old behaviour: retry on the next call"
 
 
-def test_a_backing_off_run_keeps_its_lease_and_stays_running():
+def test_a_backing_off_run_stays_running_and_is_not_immediately_claimable():
     conn = connect()
     run_id = enqueue(conn, "flaky")
 
     def handler(rid, payload):
         raise RetryLater(rid, "call", 5.0)
 
-    with Worker(conn, "worker-a", {"flaky": handler}, lease=30, heartbeat_every=5) as worker:
+    with Worker(conn, "worker-a", {"flaky": handler},
+                lease=30, heartbeat_every=5, sweep_every=None) as worker:
         assert worker.poll_once()
 
-    assert get_run(conn, run_id).status == "RUNNING", "backing off is not a failure"
-    assert claim(conn, "worker-b", lease=30) is None, "the lease is kept as the timer"
+    run = get_run(conn, run_id)
+    assert run.status == "RUNNING", "backing off is not a failure"
+    assert run.not_before is not None, "the run is scheduled for later"
+    assert claim(conn, "worker-b", lease=30) is None, "and is not claimable yet"

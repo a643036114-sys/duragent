@@ -38,6 +38,7 @@ class Run:
     input: dict[str, Any]
     created_at: float
     updated_at: float
+    not_before: float | None = None
 
 
 def enqueue(conn, workflow: str, payload: dict[str, Any] | None = None,
@@ -64,14 +65,25 @@ def get_run(conn, run_id: str) -> Run | None:
         input=json.loads(row["input_json"] or "{}"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        not_before=row["not_before"],
     )
 
 
 def set_status(conn, run_id: str, status: str, *,
                clock: Callable[[], float] = time.time) -> None:
+    """Change the status. A status change also clears any backoff deadline."""
     conn.execute(
-        "UPDATE run SET status = ?, updated_at = ? WHERE id = ?",
+        "UPDATE run SET status = ?, updated_at = ?, not_before = NULL WHERE id = ?",
         (status, clock(), run_id),
+    )
+
+
+def schedule(conn, run_id: str, not_before: float, *,
+             clock: Callable[[], float] = time.time) -> None:
+    """Park the run until ``not_before``: no worker will claim it before then."""
+    conn.execute(
+        "UPDATE run SET not_before = ?, updated_at = ? WHERE id = ?",
+        (not_before, clock(), run_id),
     )
 
 
@@ -126,10 +138,12 @@ def _claimable(conn, now: float) -> list:
     rows = conn.execute(
         "SELECT r.id FROM run r"
         " LEFT JOIN run_lease l ON l.run_id = r.id"
-        " WHERE r.status = 'PENDING'"
-        "    OR (r.status = 'RUNNING' AND (l.run_id IS NULL OR l.leased_until < ?))"
+        " WHERE (r.status = 'PENDING' AND (r.not_before IS NULL OR r.not_before <= ?))"
+        "    OR (r.status = 'RUNNING'"
+        "        AND (l.run_id IS NULL OR l.leased_until < ?)"
+        "        AND (r.not_before IS NULL OR r.not_before <= ?))"
         " ORDER BY r.created_at LIMIT 10",
-        (now,),
+        (now, now, now),
     ).fetchall()
     return rows
 

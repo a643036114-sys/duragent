@@ -50,6 +50,7 @@ from duragent.runs import (
     get_run,
     heartbeat,
     release,
+    schedule,
     set_status,
 )
 from duragent.steps import (
@@ -96,6 +97,7 @@ __all__ = [
     "claim",
     "heartbeat",
     "release",
+    "schedule",
     "PENDING",
     "RUNNING",
     "SUSPENDED",
