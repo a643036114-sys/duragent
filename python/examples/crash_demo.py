@@ -11,7 +11,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from duragent import Journal, connect, new_run_id
+from duragent import Journal, connect, list_steps, new_run_id
 
 
 class State(TypedDict, total=False):
@@ -68,9 +68,14 @@ def main() -> None:
 
     print("\n-- attempt 2: a new process, same database --")
     final = graph.invoke({"topic": "durable execution"})
-    print(f"\nfinal state: {final}")
-    print(f"actual executions: {calls}")
-    print("plan should be 1: it replayed from the journal instead of calling the model again.")
+
+    print("\n-- journal after two attempts --")
+    print(f"  {'step':<12} {'status':<10} {'attempt':<8} executions")
+    for record in list_steps(conn, run_id):
+        print(f"  {record.step_key:<12} {record.status:<10} {record.attempt:<8} {calls[record.step_key]}")
+
+    print(f"\nfinal state: {final.get('summary')!r}, published={final.get('published')}")
+    print("plan ran once: the restart replayed it from the journal instead of calling the model again.")
 
 
 if __name__ == "__main__":

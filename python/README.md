@@ -5,6 +5,8 @@ Durable execution for LangGraph agents.
 Every step writes its result to a database before the next step starts, so a crash replays
 results instead of repeating work.
 
+![a crash, a restart, and no repeated work](../docs/demo.gif)
+
 ```python
 from duragent import Journal, connect, new_run_id
 

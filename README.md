@@ -3,6 +3,11 @@
 **Durable execution for AI agents. Crash-safe steps, human approvals and budget stops — without
 changing how you build the graph.**
 
+![a crash, a restart, and no repeated work](docs/demo.gif)
+
+*A three-node agent crashes in the middle. The restart replays the finished node: the model is not
+called twice, the refund is not sent twice.*
+
 ```python
 from duragent import connect, run_step
 
