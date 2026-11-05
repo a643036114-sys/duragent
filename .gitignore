@@ -1,0 +1,16 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+*.mv.db
+*.trace.db
+*.log
+
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.DS_Store
+
+tools/*.out
+tools/*.err
