@@ -64,6 +64,27 @@ charge does not fit, nothing is billed: the run stops with `BudgetExceeded`, the
 
 Money is stored as integer micro-units. A float ledger drifts.
 
+## Workers
+
+```python
+run_id = enqueue(conn, "summary", {"topic": "x"})
+
+with Worker(conn, "worker-1", {"summary": handler}, lease=30, heartbeat_every=5) as worker:
+    worker.drain()
+```
+
+A run is claimable when it is `PENDING`, or `RUNNING` with no live lease. The lease is renewed in
+the background while the handler works, so a worker that dies is simply taken over once it
+expires — and the takeover replays finished nodes instead of repeating them.
+
+The worker turns exceptions into run states, which is the one place worth reading twice:
+
+| Raised by the handler | Run becomes |
+|---|---|
+| `ApprovalRequired` | `SUSPENDED` — waiting for a human |
+| `BudgetExceeded` | `CANCELED` — a guardrail stopped it |
+| anything else | `FAILED` |
+
 ## What it guarantees
 
 | Situation | Behaviour |

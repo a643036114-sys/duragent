@@ -53,9 +53,35 @@ CREATE TABLE IF NOT EXISTS budget (
 """
 
 
+RUN_TABLE = """
+CREATE TABLE IF NOT EXISTS run (
+    id          TEXT PRIMARY KEY,
+    workflow    TEXT NOT NULL,
+    status      TEXT NOT NULL,             -- PENDING | RUNNING | SUSPENDED | COMPLETED | FAILED | CANCELED
+    input_json  TEXT,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+)
+"""
+
+LEASE_TABLE = """
+CREATE TABLE IF NOT EXISTS run_lease (
+    run_id          TEXT PRIMARY KEY,
+    worker_id       TEXT NOT NULL,
+    leased_until    REAL NOT NULL,
+    claimed_at      REAL NOT NULL,
+    heartbeat_at    REAL NOT NULL
+)
+"""
+
+
 def connect(path: str = ":memory:") -> sqlite3.Connection:
-    """Open a database and make sure the tables exist."""
-    conn = sqlite3.connect(path, isolation_level=None)  # autocommit: we manage transactions
+    """Open a database and make sure the tables exist.
+
+    ``check_same_thread=False`` because a worker renews leases from a heartbeat
+    thread while the main thread executes a handler.
+    """
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)  # autocommit
     conn.row_factory = sqlite3.Row
     if path != ":memory:":
         conn.execute("PRAGMA journal_mode=WAL")
@@ -67,3 +93,5 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute(STEP_TABLE)
     conn.execute(APPROVAL_TABLE)
     conn.execute(BUDGET_TABLE)
+    conn.execute(RUN_TABLE)
+    conn.execute(LEASE_TABLE)

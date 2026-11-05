@@ -34,6 +34,21 @@ from duragent.budgets import (
 )
 from duragent.db import connect, init_schema
 from duragent.graph import Journal, new_run_id
+from duragent.runs import (
+    CANCELED,
+    COMPLETED,
+    FAILED,
+    PENDING,
+    RUNNING,
+    SUSPENDED,
+    Run,
+    claim,
+    enqueue,
+    get_run,
+    heartbeat,
+    release,
+    set_status,
+)
 from duragent.steps import (
     Abort,
     StepInProgress,
@@ -41,6 +56,7 @@ from duragent.steps import (
     find_step,
     run_step,
 )
+from duragent.worker import Worker
 
 __all__ = [
     "connect",
@@ -67,4 +83,18 @@ __all__ = [
     "set_budget",
     "charge",
     "usage",
+    "Worker",
+    "Run",
+    "enqueue",
+    "get_run",
+    "set_status",
+    "claim",
+    "heartbeat",
+    "release",
+    "PENDING",
+    "RUNNING",
+    "SUSPENDED",
+    "COMPLETED",
+    "FAILED",
+    "CANCELED",
 ]
