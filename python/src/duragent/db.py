@@ -39,11 +39,12 @@ SCHEMA = [
         run_id        TEXT NOT NULL,
         node          TEXT NOT NULL,
         reason        TEXT,
-        status        TEXT NOT NULL,           -- PENDING | APPROVED | REJECTED
+        status        TEXT NOT NULL,           -- PENDING | APPROVED | REJECTED | EXPIRED
         requested_at  DOUBLE PRECISION NOT NULL,
         decided_at    DOUBLE PRECISION,
         decided_by    TEXT,
         comment       TEXT,
+        expires_at    DOUBLE PRECISION,        -- NULL means "wait forever"
         PRIMARY KEY (id)
     )
     """,
@@ -80,6 +81,14 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_run_status ON run(status)",
+]
+
+# Columns added after the first release. ``CREATE TABLE IF NOT EXISTS`` does not
+# touch an existing table, so a database created by an older version needs a
+# nudge. Each entry is (table, column, type) and the upgrade is a plain
+# ADD COLUMN, which both SQLite and PostgreSQL understand.
+ADDED_COLUMNS = [
+    ("approval", "expires_at", "DOUBLE PRECISION"),
 ]
 
 
@@ -202,8 +211,23 @@ def connect(target: str = ":memory:") -> Connection:
     conn = Connection(backend)
     for statement in SCHEMA:
         conn.execute(statement)
+    _add_missing_columns(conn)
     _verify_schema(conn)
     return conn
+
+
+def _add_missing_columns(conn: Connection) -> None:
+    """Upgrade a database created by an older version.
+
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op when the table exists, so a new
+    column has to be added explicitly. There is no version table yet: the column
+    simply either exists or it does not, which is enough for additive changes.
+    """
+    for table, column, ddl in ADDED_COLUMNS:
+        try:
+            conn.execute(f"SELECT {column} FROM {table} WHERE 1 = 0")
+        except Exception:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def _verify_schema(conn: Connection) -> None:

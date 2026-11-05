@@ -156,6 +156,7 @@ def _approval_view(approval) -> dict[str, Any]:
         "reason": approval.reason,
         "status": approval.status,
         "decided_by": approval.decided_by,
+        "expires_at": approval.expires_at,
     }
 
 

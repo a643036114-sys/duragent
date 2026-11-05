@@ -32,11 +32,11 @@ step-name identity, no retry policy, approvals never expire, SQLite only, no aut
 
 ## Next, in the order I would do it
 
-1. **Approval expiry.** A run parked forever is a leak; add `expires_at` and a sweep.
-2. **Precise retry scheduling.** Backoff is computed inside the step, but a run only returns when
+1. **Precise retry scheduling.** Backoff is computed inside the step, but a run only returns when
    the worker's lease expires. A `not_before` column on `run` would fix the floor.
-3. **Schema migrations.** There is none; an old table is refused, not upgraded.
-4. **Publish.** README with a GIF, launch posts. Not before 1–3.
+2. **A background sweeper.** `expire_stale` exists but nothing calls it on a timer.
+3. **Real migrations.** Additive columns are handled; anything else is not.
+4. **Publish.** README with a GIF, launch posts. Not before 1–2.
 
 Also open: the JVM tree in `java/` has the same "non-serialisable result leaves the claim
 RUNNING" bug that was fixed in Python. Worth fixing when the Java tree gets touched again.

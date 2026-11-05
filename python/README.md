@@ -121,6 +121,20 @@ No schema change is needed: the wait is computed from the `attempt` and `finishe
 already stores. A worker keeps the lease during a backoff, and the lease expiring is what brings
 the run back — so the effective floor is the lease length.
 
+## Approvals
+
+```python
+journal.durable("refund", refund_fn, needs_approval=True,
+                reason="refund 500 CNY", expires_in=3600)
+```
+
+The first call parks the run as `SUSPENDED` and raises `ApprovalRequired`; the process is free to
+exit. `approve(conn, approval_id, by="manager")` re-opens the run and the next invoke executes the
+node exactly once. `reject` fails the run.
+
+`expires_in` is a deadline. An overdue request is closed either by the next worker that reaches
+the gate or by `expire_stale(conn)`, and the run fails instead of waiting forever.
+
 ## What it guarantees
 
 | Situation | Behaviour |
@@ -164,7 +178,8 @@ A runtime that hides its edges is worse than one that names them.
 - **Backoff is coarse when a worker is involved.** The step knows exactly when it is ready, but
   the run only comes back when a worker's lease expires. Precise scheduling needs a per-run
   "not before" column, which does not exist yet.
-- **Approvals never expire.** A run can wait forever; an expiry policy is not implemented.
+- **Approval expiry is lazy.** An overdue request is closed by the next worker that reaches the
+  gate, or by `expire_stale(conn)` that you schedule yourself. There is no background timer.
 - **No schema migrations.** The tables are created if missing; an older schema is detected and
   refused with a clear error rather than silently misreading it. There is no upgrade path.
 - **No authentication on the API.** It is a demo, not a deployment.

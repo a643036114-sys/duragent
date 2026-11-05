@@ -74,6 +74,7 @@ class Journal:
         *,
         needs_approval: bool = False,
         reason: str | Callable[[Any], str] | None = None,
+        expires_in: float | None = None,
         retry: Retry | None = None,
     ):
         """把 ``fn`` 包成一个"最多执行一次"的节点。
@@ -90,7 +91,8 @@ class Journal:
                     # reason 可以是固定字符串，也可以是 state -> str 的函数。
                     text = reason(state) if callable(reason) else reason
                     gate = lambda: require_approval(  # noqa: E731
-                        self.conn, self.run_id, step_name, text, clock=self.clock
+                        self.conn, self.run_id, step_name, text,
+                        expires_in=expires_in, clock=self.clock
                     )
 
                 # 注意：这里传的是 lambda，不是 fn(state) 的结果。

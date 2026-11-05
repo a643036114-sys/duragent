@@ -15,9 +15,11 @@ the next step starts, so a crash replays results instead of repeating work.
 
 from duragent.approvals import (
     Approval,
+    ApprovalExpired,
     ApprovalRejected,
     ApprovalRequired,
     approve,
+    expire_stale,
     latest_approval,
     pending_approvals,
     reject,
@@ -72,6 +74,8 @@ __all__ = [
     "Approval",
     "ApprovalRequired",
     "ApprovalRejected",
+    "ApprovalExpired",
+    "expire_stale",
     "approve",
     "reject",
     "latest_approval",
