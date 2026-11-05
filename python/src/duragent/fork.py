@@ -7,12 +7,15 @@ step you forked at (and everything after it) executes again.
 
     fork_run(conn, run_id, at_step="write")     # re-run "write" and later
     fork_run(conn, run_id)                      # clone: nothing re-executes
+
+A fork is not one transaction. A crash halfway through the copy leaves a shorter
+prefix, which is still coherent: the next step simply re-executes. The alternative
+would be a half-written run row that looks complete, which is worse.
 """
 
 from __future__ import annotations
 
 import time
-import uuid
 from typing import Any, Callable
 
 from duragent.budgets import budget_for, set_budget
@@ -49,17 +52,20 @@ def fork_run(
     if source is None:
         raise KeyError(f"unknown run: {source_run_id}")
 
-    history = [record for record in list_steps(conn, source_run_id)
-               if record.status == "SUCCEEDED"]
+    succeeded = [record for record in list_steps(conn, source_run_id)
+                 if record.status == "SUCCEEDED"]
 
     if at_step is not None:
-        pivot = next((record for record in history if record.step_key == at_step), None)
-        if pivot is None:
+        position = next((index for index, record in enumerate(succeeded)
+                         if record.step_key == at_step), None)
+        if position is None:
             raise ValueError(
                 f"step '{at_step}' never succeeded in run {source_run_id}; "
                 "only a completed step can be a fork point"
             )
-        history = [record for record in history if record.started_at < pivot.started_at]
+        history = succeeded[:position]
+    else:
+        history = succeeded
 
     new_run_id = enqueue(conn, source.workflow, source.input if input is None else input,
                          clock=clock)
@@ -68,11 +74,21 @@ def fork_run(
         conn.execute(
             INSERT_STEP,
             (new_run_id, record.step_key, record.attempt, record.output_json,
-             record.started_at, record.finished_at, record.input_hash),
+             record.started_at, record.finished_at, _carried_fingerprint(record, input)),
         )
 
     _copy_budget_limits(conn, source_run_id, new_run_id, clock)
     return new_run_id
+
+
+def _carried_fingerprint(record, new_input: dict[str, Any] | None) -> str | None:
+    """Keep the input hash, unless the input was replaced.
+
+    The hash exists to notice that a replay is about to reuse a result computed
+    from a *different* input. After a fork with a new payload that is exactly
+    what the inherited rows are, by design, so the hash is dropped for them.
+    """
+    return None if new_input is not None else record.input_hash
 
 
 def _copy_budget_limits(conn, source_run_id: str, new_run_id: str,

@@ -128,3 +128,56 @@ def test_the_budget_limits_are_copied_and_the_spend_is_not(source):
     assert limits.max_cost_micros == 500_000
     assert limits.max_steps == 10
     assert usage(conn, forked).cost == 0, "a fork is a new attempt, not a refund"
+
+
+def test_a_failed_step_is_not_part_of_the_inherited_history():
+    conn = connect()
+    run_id = enqueue(conn, "flaky", {"topic": "t"})
+    journal = Journal(conn, run_id)
+
+    def write(state):
+        raise RuntimeError("529")
+
+    builder = StateGraph(State)
+    builder.add_node("plan", journal.durable("plan", lambda s: {"outline": "o"}))
+    builder.add_node("write", journal.durable("write", write))
+    builder.add_edge(START, "plan")
+    builder.add_edge("plan", "write")
+    builder.add_edge("write", END)
+    graph = builder.compile()
+
+    with pytest.raises(RuntimeError):
+        graph.invoke({"topic": "t"})
+
+    cloned = fork_run(conn, run_id)
+    assert [record.step_key for record in list_steps(conn, cloned)] == ["plan"], \
+        "only the step that succeeded is inherited"
+
+    with pytest.raises(ValueError):
+        fork_run(conn, run_id, at_step="write")
+
+
+def test_a_fork_with_a_new_input_does_not_trip_the_fingerprint_guard():
+    """The inherited rows were computed from the old input on purpose."""
+    conn = connect()
+    run_id = enqueue(conn, "fp", {"topic": "old"})
+
+    def build_fp(rid):
+        journal = Journal(conn, rid)
+        builder = StateGraph(State)
+        builder.add_node("plan", journal.durable(
+            "plan", lambda s: {"outline": "outline for " + s["topic"]}, fingerprint=True))
+        builder.add_node("write", journal.durable(
+            "write", lambda s: {"summary": s["outline"]}, fingerprint=True))
+        builder.add_edge(START, "plan")
+        builder.add_edge("plan", "write")
+        builder.add_edge("write", END)
+        return builder.compile()
+
+    build_fp(run_id).invoke({"topic": "old"})
+
+    forked = fork_run(conn, run_id, at_step="write", input={"topic": "new"})
+
+    final = build_fp(forked).invoke({"topic": "new"})
+
+    assert final["summary"] == "outline for old", "plan is inherited, not recomputed"

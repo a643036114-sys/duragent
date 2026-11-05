@@ -139,30 +139,42 @@ async function loadDetail() {
 }
 
 async function decide(id, action) {
-  await api(`/api/approvals/${id}/${action}`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ by: "web", comment: null }),
-  });
+  try {
+    await api(`/api/approvals/${id}/${action}`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ by: "web", comment: null }),
+    });
+  } catch (err) {
+    alert(err.message);
+  }
   loadDetail(); loadRuns();
 }
 
 async function forkAt(step) {
-  const created = await api(`/api/runs/${selected}/fork`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ at_step: step }),
-  });
-  selected = created.id;
+  try {
+    const created = await api(`/api/runs/${selected}/fork`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ at_step: step }),
+    });
+    selected = created.id;
+  } catch (err) {
+    alert(`分叉失败: ${err.message}`);
+  }
   loadRuns(); loadDetail();
 }
 
 async function createRun(form) {
-  const workflow = form.workflow.value;
-  const amount = Number(form.amount.value || 0);
-  const body = { workflow, input: workflow === "refund" ? { amount } : { topic: "durable execution" } };
-  const created = await api("/api/runs", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  selected = created.id;
+  try {
+    const workflow = form.workflow.value;
+    const amount = Number(form.amount.value || 0);
+    const body = { workflow, input: workflow === "refund" ? { amount } : { topic: "durable execution" } };
+    const created = await api("/api/runs", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    selected = created.id;
+  } catch (err) {
+    alert(`创建失败: ${err.message}`);
+  }
   loadRuns(); loadDetail();
 }
 
