@@ -142,9 +142,14 @@ pip install -e ".[api]"
 python examples/api_app.py
 ```
 
+Open <http://127.0.0.1:8000/> for a one-page console: runs on the left, steps, spend and pending
+approvals on the right, with approve / reject buttons. It is a single HTML file with vanilla JS —
+no build step, no bundler.
+
 ```bash
 curl -X POST localhost:8000/api/runs -H 'content-type: application/json' \
      -d '{"workflow":"refund","input":{"amount":500}}'
+curl localhost:8000/api/runs
 curl localhost:8000/api/runs/<id>
 curl -X POST localhost:8000/api/approvals/<aid>/approve \
      -H 'content-type: application/json' -d '{"by":"manager@corp"}'

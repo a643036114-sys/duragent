@@ -133,6 +133,27 @@ def test_health():
     assert client.get("/api/health").json() == {"status": "ok"}
 
 
+def test_the_console_page_is_served():
+    client, _ = make_client()
+
+    page = client.get("/")
+
+    assert page.status_code == 200
+    assert "Duragent" in page.text
+    assert "/api/runs" in page.text
+
+
+def test_runs_can_be_listed_for_the_console():
+    client, _ = make_client()
+
+    created = client.post("/api/runs", json={"workflow": "summary", "input": {"topic": "x"}})
+    runs = client.get("/api/runs").json()
+
+    assert runs[0]["id"] == created.json()["id"]
+    assert runs[0]["workflow"] == "summary"
+    assert runs[0]["status"] == "PENDING"
+
+
 def test_a_run_can_be_created_with_a_budget():
     client, app = make_client()
 

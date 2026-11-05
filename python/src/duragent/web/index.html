@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Duragent</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #0f1115; color: #e6e8ee; }
+  header { padding: 14px 20px; border-bottom: 1px solid #242833; display: flex;
+           align-items: center; gap: 16px; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+  header .hint { color: #7b8394; font-size: 12px; }
+  main { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 57px); }
+  #runs { border-right: 1px solid #242833; overflow: auto; }
+  .run { padding: 10px 16px; border-bottom: 1px solid #1a1e27; cursor: pointer; }
+  .run:hover { background: #151922; }
+  .run.active { background: #1b2130; border-left: 3px solid #5b8def; padding-left: 13px; }
+  .run .id { font-family: ui-monospace, monospace; font-size: 12px; color: #9aa4b8; }
+  .run .wf { font-weight: 600; }
+  #detail { padding: 20px 24px; overflow: auto; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .status { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px;
+            font-weight: 600; }
+  .COMPLETED { background: #123524; color: #56d364; }
+  .SUSPENDED { background: #3a2d12; color: #e3b341; }
+  .FAILED    { background: #3a1620; color: #f85149; }
+  .CANCELED  { background: #2b2f38; color: #a4adc0; }
+  .RUNNING   { background: #12283a; color: #58a6ff; }
+  .PENDING   { background: #23262e; color: #a4adc0; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 20px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #1e222c; }
+  th { color: #8b93a7; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  code { font-family: ui-monospace, monospace; }
+  .card { border: 1px solid #242833; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  button { background: #22304a; color: #cfe0ff; border: 1px solid #33507e; border-radius: 6px;
+           padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #2a3d5e; }
+  button.reject { background: #3a1d24; border-color: #6b2b36; color: #ffb4bc; }
+  .empty { color: #6b7385; padding: 24px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input, select { background: #151922; color: #e6e8ee; border: 1px solid #2b3040;
+                  border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Duragent</h1>
+  <span class="hint">durable execution for LangGraph agents</span>
+  <form id="new-run" class="row" style="margin-left:auto">
+    <select name="workflow">
+      <option value="summary">summary</option>
+      <option value="refund">refund</option>
+    </select>
+    <input name="amount" type="number" placeholder="金额" style="width:90px">
+    <button type="submit">新建 run</button>
+  </form>
+</header>
+
+<main>
+  <aside id="runs"><div class="empty">加载中…</div></aside>
+  <section id="detail"><div class="empty">选一个 run 看详情</div></section>
+</main>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+let selected = null;
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.status === 204 ? null : res.json();
+}
+
+function statusBadge(status) {
+  return `<span class="status ${status}">${status}</span>`;
+}
+
+async function loadRuns() {
+  try {
+    const runs = await api("/api/runs?limit=50");
+    const box = $("#runs");
+    if (!runs.length) { box.innerHTML = '<div class="empty">还没有 run，右上角新建一个</div>'; return; }
+    box.innerHTML = runs.map((run) => `
+      <div class="run ${run.id === selected ? "active" : ""}" data-id="${run.id}">
+        <div class="wf">${run.workflow}</div>
+        <div class="row">
+          <span class="id">${run.id.slice(0, 8)}</span>
+          ${statusBadge(run.status)}
+        </div>
+      </div>`).join("");
+    box.querySelectorAll(".run").forEach((el) => {
+      el.onclick = () => { selected = el.dataset.id; loadRuns(); loadDetail(); };
+    });
+  } catch (err) {
+    $("#runs").innerHTML = `<div class="empty">${err.message}</div>`;
+  }
+}
+
+async function loadDetail() {
+  if (!selected) return;
+  const box = $("#detail");
+  try {
+    const run = await api(`/api/runs/${selected}`);
+    const steps = run.steps.length
+      ? `<table><tr><th>step</th><th>status</th><th>attempt</th><th>error</th></tr>
+         ${run.steps.map((s) => `<tr><td><code>${s.step}</code></td><td>${s.status}</td>
+            <td>${s.attempt}</td><td>${s.error ?? ""}</td></tr>`).join("")}</table>`
+      : '<p class="empty">还没有步骤</p>';
+
+    const approvals = run.approvals.length
+      ? run.approvals.map((a) => `
+          <div class="card">
+            <div class="row"><strong>${a.node}</strong><span class="hint">${a.reason ?? ""}</span></div>
+            <div class="row" style="margin-top:10px">
+              <button onclick="decide('${a.id}', 'approve')">通过</button>
+              <button class="reject" onclick="decide('${a.id}', 'reject')">拒绝</button>
+            </div>
+          </div>`).join("")
+      : '<p class="empty">没有待审批</p>';
+
+    const budget = run.budget
+      ? `<div class="card">tokens <code>${run.budget.tokens}</code> ·
+           cost <code>${run.budget.cost.toFixed(4)}</code>
+           ${run.budget.max_cost ? ` / ${run.budget.max_cost}` : ""} ·
+           steps <code>${run.budget.steps}</code></div>`
+      : '<div class="card">没有预算</div>';
+
+    box.innerHTML = `
+      <h2 class="row"><code>${run.id}</code> ${statusBadge(run.status)}</h2>
+      ${budget}
+      <h2>步骤</h2>${steps}
+      <h2>待审批</h2>${approvals}`;
+  } catch (err) {
+    box.innerHTML = `<div class="empty">${err.message}</div>`;
+  }
+}
+
+async function decide(id, action) {
+  await api(`/api/approvals/${id}/${action}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ by: "web", comment: null }),
+  });
+  loadDetail(); loadRuns();
+}
+
+async function createRun(form) {
+  const workflow = form.workflow.value;
+  const amount = Number(form.amount.value || 0);
+  const body = { workflow, input: workflow === "refund" ? { amount } : { topic: "durable execution" } };
+  const created = await api("/api/runs", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  selected = created.id;
+  loadRuns(); loadDetail();
+}
+
+loadRuns(); loadDetail();
+$("#new-run").onsubmit = (event) => { event.preventDefault(); createRun(event.target); };
+setInterval(() => { loadRuns(); loadDetail(); }, 2000);
+</script>
+</body>
+</html>

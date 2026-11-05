@@ -20,17 +20,20 @@ from __future__ import annotations
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from duragent.approvals import approve, pending_approvals, reject
 from duragent.budgets import budget_for, set_budget, usage
-from duragent.runs import enqueue, get_run
+from duragent.runs import enqueue, get_run, list_runs
 from duragent.steps import list_steps
 from duragent.worker import Handler, Worker
+
+INDEX_HTML = Path(__file__).with_name("web") / "index.html"
 
 
 class CreateRunRequest(BaseModel):
@@ -83,6 +86,19 @@ def create_app(
     app = FastAPI(title="duragent", version="0.1.0", lifespan=lifespan)
     app.state.worker = worker
     app.state.conn = conn
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        """The one-page console. No build step, no bundler, no framework."""
+        return INDEX_HTML.read_text(encoding="utf-8")
+
+    @app.get("/api/runs")
+    def read_runs(limit: int = 20) -> list[dict[str, Any]]:
+        return [
+            {"id": run.id, "workflow": run.workflow, "status": run.status,
+             "created_at": run.created_at}
+            for run in list_runs(conn, max(1, min(limit, 200)))
+        ]
 
     @app.post("/api/runs", status_code=202)
     def create_run(body: CreateRunRequest) -> dict[str, Any]:
