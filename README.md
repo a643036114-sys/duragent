@@ -19,6 +19,35 @@ String summary = steps.run(runId, "summarize-ticket", String.class,
 Call it again — in the same process, after a restart, from another machine — and the lambda
 **does not execute**. The persisted result is replayed instead.
 
+## With LangGraph4j
+
+```java
+var nodes = new DurableNodeActions(runId, steps, runs);
+
+var graph = new StateGraph<AgentState>(AgentState::new)
+        .addNode("plan",      nodes.durable("plan",      planAction))
+        .addNode("summarize", nodes.durable("summarize", summarizeAction))
+        .addNode("publish",   nodes.durable("publish",   publishAction))
+        .addEdge(START, "plan")
+        .addEdge("plan", "summarize")
+        .addEdge("summarize", "publish")
+        .addEdge("publish", END)
+        .compile();
+
+new DurableGraph<>(graph, runs, runId).invoke(Map.of("ticket", "T-1"));
+```
+
+If the JVM dies inside `summarize`, the next invoke replays `plan` from the journal (no model
+call, no cost), retries `summarize`, and runs `publish` once. See
+[ADR 0003](docs/adr/0003-replay-instead-of-snapshot.md) for why replay beats snapshot restore.
+
+## Modules
+
+| Module | What it is |
+|---|---|
+| `duragent-core` | durable steps, runs, checkpoints, JDBC stores. No framework dependency. |
+| `duragent-langgraph4j` | wraps LangGraph4j node actions, nothing else. |
+
 ## Why another layer
 
 LangGraph (and LangChain4j / Spring AI on the JVM) model the *control flow* of an agent: nodes,
@@ -28,11 +57,11 @@ Python and JavaScript, as a closed-source commercial runtime.
 
 Duragent is the open, framework-agnostic, JVM-native piece:
 
-| Concern | Kafka/Temporal style answer | What Duragent does |
+| Concern | Usual answer | What Duragent does |
 |---|---|---|
 | Re-run protection | exactly-once is a myth; use idempotency keys | persists each step result under a stable key |
 | Crash recovery | worker leases + takeover | `lease_expires_at_ms`, conditional `UPDATE` |
-| Long human approvals | durable timers | step stays `RUNNING`, resumed by a later call |
+| Long human approvals | durable timers | run parks as `SUSPENDED`, no thread held |
 | Cost control | budgets | planned: token / money / step / wall-clock caps |
 
 ## How a step executes
@@ -60,12 +89,14 @@ four statements run on H2, PostgreSQL and MySQL.
   providers and most LLM gateways accept one.
 * Two live workers never both execute the same step; the loser fails fast with
   `StepInProgressException` rather than blocking a thread.
+* Replay requires deterministic node actions and edge conditions. That is a requirement of any
+  resumable graph, but it is written down here instead of assumed.
 
 ## Quickstart
 
 ```bash
-mvn test                       # 8 tests on embedded H2, no setup
-mvn test -Dtest=CrashResumeDemoTest   # see crash + resume in the console
+mvn test                              # 18 tests on embedded H2, no setup
+mvn test -Dtest=CrashResumeDemoTest   # crash + resume in the console
 ```
 
 Against a real PostgreSQL:
@@ -77,12 +108,14 @@ mvn test -Dtest=PostgresCompatibilityTest \
 ```
 
 > This repository ships a project-local `.mvn/settings.xml` because the machine-wide Maven
-> mirror is unreachable here. Delete it if your environment already resolves Maven Central.
+> mirror is unreachable here. Delete `.mvn/maven.config` if your environment resolves Maven
+> Central normally.
 
 ## Status
 
-`0.1.0-SNAPSHOT`, step 1 of 8. The durable step primitive works and is tested against H2 and
-PostgreSQL 16. Not production ready: no runner, no approvals, no budgets yet.
+`0.1.0-SNAPSHOT`, milestones 1–2 of 8. Durable steps, runs, checkpoints and the LangGraph4j
+adapter work and are tested against H2 and PostgreSQL 16. Not production ready: no approvals,
+no budgets, no worker scheduler yet.
 
 See [`docs/roadmap.md`](docs/roadmap.md) and the decision records in [`docs/adr/`](docs/adr/).
 

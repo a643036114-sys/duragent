@@ -14,15 +14,17 @@ The primitive everything else stands on.
 - [x] schema verified on H2 and PostgreSQL 16
 - [x] crash/resume demo
 
-## 2. Run + checkpoint (LangGraph4j adapter)
+## 2. Run + checkpoint (LangGraph4j adapter) ✅
 
 Give the library a notion of a *run* and plug it into LangGraph4j's node execution.
 
-- [ ] `run` table: status, input, graph state, version
-- [ ] `DurableGraph` — wrap `StateGraph` nodes so every node is a durable step
-- [ ] checkpoint per super-step (graph state snapshot, JSON)
-- [ ] resume a run from its last checkpoint
-- [ ] demo: 5-node agent, kill the JVM at node 3, resume from node 3
+- [x] `run` table: status, input, graph state, cursor, optimistic version
+- [x] `DurableGraph` — wrap `StateGraph` nodes so every node is a durable step
+- [x] checkpoint per node (timeline for diff/replay)
+- [x] resume by replaying the journal instead of restoring a snapshot (ADR 0003)
+- [x] test: 3-node agent that dies at node 2, then resumes: node 1 replays, node 2 retries,
+      node 3 runs once
+- [ ] demo: 5-node agent with a real JVM kill (not an exception) + `docker compose`
 
 ## 3. Approvals (human in the loop)
 

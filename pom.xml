@@ -23,6 +23,7 @@
 
   <modules>
     <module>duragent-core</module>
+    <module>duragent-langgraph4j</module>
   </modules>
 
   <properties>
@@ -35,6 +36,7 @@
     <logback.version>1.4.14</logback.version>
     <junit.version>5.11.3</junit.version>
     <h2.version>2.2.224</h2.version>
+    <langgraph4j.version>1.9.8</langgraph4j.version>
   </properties>
 
   <dependencyManagement>
@@ -67,6 +69,18 @@
         <artifactId>h2</artifactId>
         <version>${h2.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.bsc.langgraph4j</groupId>
+        <artifactId>langgraph4j-core</artifactId>
+        <version>${langgraph4j.version}</version>
+        <exclusions>
+          <!-- LangGraph4j marks these provided; we do not want them leaking into consumers. -->
+          <exclusion>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
     </dependencies>
   </dependencyManagement>
