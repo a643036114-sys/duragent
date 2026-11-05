@@ -142,6 +142,33 @@ ask when an agent misbehaves. In the console, every step row has a fork button.
 The forked run keeps the budget **limits** and starts with a fresh ledger: it is a new attempt, not
 a refund.
 
+## Diff
+
+```bash
+duragent diff <run_a> <run_b>
+curl localhost:8000/api/runs/<a>/diff/<b>
+```
+
+Compares two journals step by step: which steps changed, and the unified diff of the outputs the
+runtime already stored.
+
+```
+a  f2dcfae2  COMPLETED
+b  8f12c933  COMPLETED
+
+  plan   changed     SUCCEEDED -> SUCCEEDED
+    --- a/plan
+    +++ b/plan
+    -  "plan": "write about durable execution"
+    +  "plan": "write about 幂等与重放"
+  write  changed     SUCCEEDED -> SUCCEEDED
+```
+
+A forked run records its parent (`forked_from`), so the console shows this comparison
+automatically on any run that came from a fork. Together with `fork`, this is the pair that answers
+"what did my change actually do to the agent" — which is the question you ask every time you touch
+a prompt.
+
 ## CLI
 
 ```bash

@@ -184,6 +184,26 @@ def test_forking_at_an_unknown_step_is_a_400():
     assert response.status_code == 400
 
 
+def test_two_runs_can_be_diffed_through_the_api():
+    client, app = make_client()
+    run_id = client.post("/api/runs", json={"workflow": "summary", "input": {"topic": "x"}}) \
+        .json()["id"]
+    app.state.worker.poll_once()
+
+    forked = client.post(f"/api/runs/{run_id}/fork", json={"at_step": "write"}).json()["id"]
+    app.state.worker.poll_once()
+
+    detail = client.get(f"/api/runs/{forked}").json()
+    assert detail["forked_from"] == run_id
+
+    body = client.get(f"/api/runs/{run_id}/diff/{forked}").json()
+    assert body["a"] == run_id
+    assert body["b"] == forked
+    assert [step["step"] for step in body["steps"]] == ["plan", "write"]
+    assert "budget" in body
+    assert client.get(f"/api/runs/{run_id}/diff/nope").status_code == 404
+
+
 def test_a_run_can_be_created_with_a_budget():
     client, app = make_client()
 

@@ -16,6 +16,7 @@ from typing import Sequence
 from duragent.approvals import pending_approvals
 from duragent.budgets import budget_for, usage
 from duragent.db import connect
+from duragent.diff import diff_runs, format_diff
 from duragent.fork import fork_run
 from duragent.runs import get_run, list_runs
 from duragent.steps import list_steps
@@ -38,6 +39,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                       help="step to execute again; everything before it is kept")
     fork.add_argument("--input", default=None, help="JSON that replaces the run input")
 
+    diff = sub.add_parser("diff", help="compare two runs step by step")
+    diff.add_argument("a")
+    diff.add_argument("b")
+
     args = parser.parse_args(argv)
     conn = connect(args.db)
 
@@ -45,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _list(conn, args.limit)
     if args.command == "fork":
         return _fork(conn, args.run_id, args.at_step, args.input)
+    if args.command == "diff":
+        return _diff(conn, args.a, args.b)
     return _inspect(conn, args.run_id)
 
 
@@ -110,6 +117,16 @@ def _fork(conn, run_id: str, at_step: str | None, raw_input: str | None) -> int:
         return 1
 
     print(new_id)
+    return 0
+
+
+def _diff(conn, a: str, b: str) -> int:
+    try:
+        result = diff_runs(conn, a, b)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(format_diff(result))
     return 0
 
 

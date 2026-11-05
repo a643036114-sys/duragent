@@ -48,6 +48,25 @@ def test_the_cli_reports_an_unknown_run(tmp_path, capsys):
     assert "unknown run" in capsys.readouterr().err
 
 
+def test_the_cli_diffs_two_runs(tmp_path, capsys):
+    from duragent import run_step
+
+    db = str(tmp_path / "ops.db")
+    conn = connect(db)
+    before = enqueue(conn, "summary", {})
+    after = enqueue(conn, "summary", {})
+    run_step(conn, before, "plan", lambda: {"plan": "old"})
+    run_step(conn, after, "plan", lambda: {"plan": "new"})
+    conn.close()
+
+    assert cli_main(["--db", db, "diff", before, after]) == 0
+    out = capsys.readouterr().out
+    assert "plan" in out
+    assert "changed" in out
+    assert "-  \"plan\": \"old\"" in out
+    assert "+  \"plan\": \"new\"" in out
+
+
 def test_the_cli_forks_a_run(tmp_path, capsys):
     from duragent import run_step
 

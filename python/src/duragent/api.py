@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from duragent.approvals import approve, pending_approvals, reject
 from duragent.budgets import budget_for, set_budget, usage
+from duragent.diff import diff_runs
 from duragent.fork import fork_run
 from duragent.runs import enqueue, get_run, list_runs
 from duragent.steps import list_steps
@@ -133,6 +134,37 @@ def create_app(
             ],
             "budget": _budget_view(conn, run_id),
             "approvals": [_approval_view(a) for a in pending_approvals(conn, run_id)],
+            "forked_from": run.forked_from,
+        }
+
+    @app.get("/api/runs/{run_id}/diff/{other_id}")
+    def diff(run_id: str, other_id: str) -> dict[str, Any]:
+        try:
+            result = diff_runs(conn, run_id, other_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        return {
+            "a": result.a,
+            "b": result.b,
+            "a_status": result.a_status,
+            "b_status": result.b_status,
+            "steps": [
+                {
+                    "step": step.step,
+                    "a_status": step.a_status,
+                    "b_status": step.b_status,
+                    "changed": step.changed,
+                    "summary": step.summary(),
+                    "lines": list(step.lines),
+                }
+                for step in result.steps
+            ],
+            "budget": {
+                "a_tokens": result.a_tokens,
+                "b_tokens": result.b_tokens,
+                "a_cost": result.a_cost,
+                "b_cost": result.b_cost,
+            },
         }
 
     @app.post("/api/runs/{run_id}/fork", status_code=202)

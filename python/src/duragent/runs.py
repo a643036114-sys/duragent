@@ -39,17 +39,19 @@ class Run:
     created_at: float
     updated_at: float
     not_before: float | None = None
+    forked_from: str | None = None
 
 
-def enqueue(conn, workflow: str, payload: dict[str, Any] | None = None,
-            *, clock: Callable[[], float] = time.time) -> str:
+def enqueue(conn, workflow: str, payload: dict[str, Any] | None = None, *,
+            forked_from: str | None = None,
+            clock: Callable[[], float] = time.time) -> str:
     """Create a run that waits for a worker instead of running immediately."""
     run_id = str(uuid.uuid4())
     now = clock()
     conn.execute(
-        "INSERT INTO run (id, workflow, status, input_json, created_at, updated_at)"
-        " VALUES (?, ?, 'PENDING', ?, ?, ?)",
-        (run_id, workflow, json.dumps(payload or {}, ensure_ascii=False), now, now),
+        "INSERT INTO run (id, workflow, status, input_json, created_at, updated_at, forked_from)"
+        " VALUES (?, ?, 'PENDING', ?, ?, ?, ?)",
+        (run_id, workflow, json.dumps(payload or {}, ensure_ascii=False), now, now, forked_from),
     )
     return run_id
 
@@ -95,6 +97,7 @@ def _to_run(row) -> Run:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         not_before=row["not_before"],
+        forked_from=row["forked_from"],
     )
 
 

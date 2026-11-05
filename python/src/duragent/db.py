@@ -70,7 +70,8 @@ SCHEMA = [
         input_json  TEXT,
         created_at  DOUBLE PRECISION NOT NULL,
         updated_at  DOUBLE PRECISION NOT NULL,
-        not_before  DOUBLE PRECISION           -- set while a step backs off
+        not_before  DOUBLE PRECISION,          -- set while a step backs off
+        forked_from TEXT                       -- the run this one was forked from
     )
     """,
     """
@@ -92,6 +93,7 @@ SCHEMA = [
 ADDED_COLUMNS = [
     ("approval", "expires_at", "DOUBLE PRECISION"),
     ("run", "not_before", "DOUBLE PRECISION"),
+    ("run", "forked_from", "TEXT"),
     ("step_record", "input_hash", "TEXT"),
 ]
 

@@ -46,7 +46,7 @@ def summary_handler(conn):
         def write(state):
             time.sleep(0.3)
             journal.charge(tokens=1200, cost=0.004)
-            return {"summary": "durable execution, explained"}
+            return {"summary": "summary of: " + state["plan"]}
 
         builder = StateGraph(SummaryState)
         builder.add_node("plan", journal.durable("plan", plan))

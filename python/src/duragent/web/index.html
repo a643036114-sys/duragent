@@ -40,6 +40,8 @@
   button.reject { background: #3a1d24; border-color: #6b2b36; color: #ffb4bc; }
   .empty { color: #6b7385; padding: 24px; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  pre { background: #0b0e13; border: 1px solid #1e222c; border-radius: 6px; padding: 10px;
+        overflow: auto; font-size: 12px; margin: 10px 0 0; }
   input, select { background: #151922; color: #e6e8ee; border: 1px solid #2b3040;
                   border-radius: 6px; padding: 5px 8px; font-size: 13px; }
 </style>
@@ -128,13 +130,41 @@ async function loadDetail() {
            steps <code>${run.budget.steps}</code></div>`
       : '<div class="card">没有预算</div>';
 
+    const diffSection = run.forked_from
+      ? await renderDiff(run.forked_from, run.id)
+      : "";
+
     box.innerHTML = `
       <h2 class="row"><code>${run.id}</code> ${statusBadge(run.status)}</h2>
+      ${run.forked_from ? `<div class="hint">分叉自 <code>${run.forked_from.slice(0, 8)}</code></div>` : ""}
       ${budget}
       <h2>步骤</h2>${steps}
-      <h2>待审批</h2>${approvals}`;
+      <h2>待审批</h2>${approvals}
+      ${diffSection}`;
   } catch (err) {
     box.innerHTML = `<div class="empty">${err.message}</div>`;
+  }
+}
+
+const escapeHtml = (value) => String(value).replace(/[&<>]/g,
+  (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
+
+async function renderDiff(a, b) {
+  try {
+    const diff = await api(`/api/runs/${a}/diff/${b}`);
+    const rows = diff.steps.map((step) => {
+      const head = `<div class="row"><strong>${step.step}</strong>
+        <span class="hint">${step.a_status ?? "-"} → ${step.b_status ?? "-"} · ${step.summary}</span></div>`;
+      const body = step.changed && step.lines.length
+        ? `<pre>${escapeHtml(step.lines.join("\n"))}</pre>` : "";
+      return `<div class="card">${head}${body}</div>`;
+    }).join("");
+    const money = `tokens ${diff.budget.a_tokens} → ${diff.budget.b_tokens} · ` +
+      `cost ${diff.budget.a_cost.toFixed(4)} → ${diff.budget.b_cost.toFixed(4)}`;
+    return `<h2>与源 run 的差异</h2><div class="hint" style="margin-bottom:10px">${money}</div>
+      ${rows || '<p class="empty">两条 run 的步骤完全一致</p>'}`;
+  } catch (err) {
+    return `<p class="empty">对比失败: ${escapeHtml(err.message)}</p>`;
   }
 }
 

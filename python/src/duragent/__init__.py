@@ -35,6 +35,7 @@ from duragent.budgets import (
     usage,
 )
 from duragent.db import connect, init_schema
+from duragent.diff import RunDiff, StepDiff, diff_runs, format_diff
 from duragent.fork import fork_run
 from duragent.graph import Journal, new_run_id
 from duragent.retry import RetriesExhausted, Retry, RetryLater
@@ -75,6 +76,10 @@ __all__ = [
     "Journal",
     "new_run_id",
     "fork_run",
+    "diff_runs",
+    "format_diff",
+    "RunDiff",
+    "StepDiff",
     "StepRecord",
     "StepInProgress",
     "InputChanged",

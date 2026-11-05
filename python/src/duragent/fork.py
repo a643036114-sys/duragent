@@ -68,7 +68,7 @@ def fork_run(
         history = succeeded
 
     new_run_id = enqueue(conn, source.workflow, source.input if input is None else input,
-                         clock=clock)
+                         forked_from=source_run_id, clock=clock)
 
     for record in history:
         conn.execute(
