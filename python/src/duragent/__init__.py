@@ -35,6 +35,7 @@ from duragent.budgets import (
     usage,
 )
 from duragent.db import connect, init_schema
+from duragent.fork import fork_run
 from duragent.graph import Journal, new_run_id
 from duragent.retry import RetriesExhausted, Retry, RetryLater
 from duragent.runs import (
@@ -60,6 +61,7 @@ from duragent.steps import (
     StepInProgress,
     StepRecord,
     find_step,
+    list_steps,
     run_step,
 )
 from duragent.worker import Worker
@@ -68,9 +70,11 @@ __all__ = [
     "connect",
     "init_schema",
     "find_step",
+    "list_steps",
     "run_step",
     "Journal",
     "new_run_id",
+    "fork_run",
     "StepRecord",
     "StepInProgress",
     "InputChanged",

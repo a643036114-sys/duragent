@@ -104,9 +104,10 @@ async function loadDetail() {
   try {
     const run = await api(`/api/runs/${selected}`);
     const steps = run.steps.length
-      ? `<table><tr><th>step</th><th>status</th><th>attempt</th><th>error</th></tr>
+      ? `<table><tr><th>step</th><th>status</th><th>attempt</th><th>error</th><th></th></tr>
          ${run.steps.map((s) => `<tr><td><code>${s.step}</code></td><td>${s.status}</td>
-            <td>${s.attempt}</td><td>${s.error ?? ""}</td></tr>`).join("")}</table>`
+            <td>${s.attempt}</td><td>${s.error ?? ""}</td>
+            <td><button onclick="forkAt('${s.step}')">从这里分叉</button></td></tr>`).join("")}</table>`
       : '<p class="empty">还没有步骤</p>';
 
     const approvals = run.approvals.length
@@ -143,6 +144,15 @@ async function decide(id, action) {
     body: JSON.stringify({ by: "web", comment: null }),
   });
   loadDetail(); loadRuns();
+}
+
+async function forkAt(step) {
+  const created = await api(`/api/runs/${selected}/fork`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ at_step: step }),
+  });
+  selected = created.id;
+  loadRuns(); loadDetail();
 }
 
 async function createRun(form) {

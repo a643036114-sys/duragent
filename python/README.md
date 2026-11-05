@@ -124,6 +124,24 @@ The journal is keyed by step name, so a replay would happily return a result com
 *different* input — the "I changed the prompt and nothing happened" bug. With `fingerprint=True`
 the input is hashed and a mismatch raises `InputChanged` instead of silently returning stale work.
 
+## Fork
+
+```bash
+duragent fork <run_id> --at write
+duragent fork <run_id> --at plan --input '{"topic": "another angle"}'
+```
+
+Creates a new run that inherits every step that succeeded **before** `write`, then executes `write`
+and everything after it again. Omitting `--at` clones the run as it stands.
+
+This is the feature a snapshot-based runtime cannot offer. The journal stores *results*, so a fork
+is a copy of rows and the inherited history replays without a single model call. Use it to ask
+"what would have happened if this step had gone differently", which is the question you actually
+ask when an agent misbehaves. In the console, every step row has a fork button.
+
+The forked run keeps the budget **limits** and starts with a fresh ledger: it is a new attempt, not
+a refund.
+
 ## CLI
 
 ```bash

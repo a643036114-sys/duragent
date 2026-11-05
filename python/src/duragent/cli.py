@@ -9,12 +9,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from typing import Sequence
 
 from duragent.approvals import pending_approvals
 from duragent.budgets import budget_for, usage
 from duragent.db import connect
+from duragent.fork import fork_run
 from duragent.runs import get_run, list_runs
 from duragent.steps import list_steps
 
@@ -30,11 +32,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     runs = sub.add_parser("runs", help="list recent runs")
     runs.add_argument("--limit", type=int, default=20)
 
+    fork = sub.add_parser("fork", help="start a new run from another run's history")
+    fork.add_argument("run_id")
+    fork.add_argument("--at", dest="at_step", default=None,
+                      help="step to execute again; everything before it is kept")
+    fork.add_argument("--input", default=None, help="JSON that replaces the run input")
+
     args = parser.parse_args(argv)
     conn = connect(args.db)
 
     if args.command == "runs":
         return _list(conn, args.limit)
+    if args.command == "fork":
+        return _fork(conn, args.run_id, args.at_step, args.input)
     return _inspect(conn, args.run_id)
 
 
@@ -83,6 +93,23 @@ def _inspect(conn, run_id: str) -> int:
         print("\n  waiting for a human")
         for approval in waiting:
             print(f"    {approval.node:<24} {approval.reason}")
+    return 0
+
+
+def _fork(conn, run_id: str, at_step: str | None, raw_input: str | None) -> int:
+    try:
+        payload = json.loads(raw_input) if raw_input else None
+    except json.JSONDecodeError as exc:
+        print(f"--input is not valid JSON: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        new_id = fork_run(conn, run_id, at_step=at_step, input=payload)
+    except (KeyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print(new_id)
     return 0
 
 

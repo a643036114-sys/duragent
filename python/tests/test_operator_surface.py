@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from duragent import Worker, claim, connect, enqueue, list_runs
+from duragent import Worker, claim, connect, enqueue, get_run, list_runs
 from duragent.cli import main as cli_main
 
 pytest.importorskip("fastapi")
@@ -46,6 +46,26 @@ def test_the_cli_reports_an_unknown_run(tmp_path, capsys):
 
     assert cli_main(["--db", db, "inspect", "nope"]) == 1
     assert "unknown run" in capsys.readouterr().err
+
+
+def test_the_cli_forks_a_run(tmp_path, capsys):
+    from duragent import run_step
+
+    db = str(tmp_path / "ops.db")
+    conn = connect(db)
+    run_id = enqueue(conn, "summary", {"topic": "x"})
+    run_step(conn, run_id, "plan", lambda: {"outline": "o"})
+    conn.close()
+
+    assert cli_main(["--db", db, "fork", run_id, "--at", "plan"]) == 0
+    forked = capsys.readouterr().out.strip()
+
+    conn = connect(db)
+    assert get_run(conn, forked).workflow == "summary"
+    conn.close()
+
+    assert cli_main(["--db", db, "fork", run_id, "--at", "nope"]) == 1
+    assert "never succeeded" in capsys.readouterr().err
 
 
 def test_metrics_report_runs_steps_and_spend():

@@ -20,11 +20,12 @@ Where the project stands, so a break of a few days does not cost a day of re-rea
 | Input fingerprints catch stale replays | `graph.py` + `steps.py` | `tests/test_fingerprint.py` |
 | CLI (`duragent inspect`) and `/metrics` | `cli.py`, `api.py` | `tests/test_operator_surface.py` |
 | A real model call, priced from usage | `examples/real_llm_demo.py` | `tests/test_real_llm_example.py` (fake provider) |
+| Fork a run from any completed step | `fork.py` | `tests/test_fork.py` |
 | 200 runs over 4 workers, no duplicate steps | `benchmarks/load_test.py` | `tests/test_load.py` |
 
 ```bash
-cd python && python -m pytest -q                                   # 80 passed, 6 skipped
-DURAGENT_PG_URL=postgresql://... python -m pytest -q               # 86 passed
+cd python && python -m pytest -q                                   # 91 passed, 6 skipped
+DURAGENT_PG_URL=postgresql://... python -m pytest -q               # 97 passed
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 and 3.13 with a PostgreSQL service.

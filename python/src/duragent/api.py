@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from duragent.approvals import approve, pending_approvals, reject
 from duragent.budgets import budget_for, set_budget, usage
+from duragent.fork import fork_run
 from duragent.runs import enqueue, get_run, list_runs
 from duragent.steps import list_steps
 from duragent.worker import Handler, Worker
@@ -46,6 +47,11 @@ class CreateRunRequest(BaseModel):
 class DecisionRequest(BaseModel):
     by: str = "http"
     comment: str | None = None
+
+
+class ForkRunRequest(BaseModel):
+    at_step: str | None = None
+    input: dict[str, Any] | None = None
 
 
 def create_app(
@@ -128,6 +134,17 @@ def create_app(
             "budget": _budget_view(conn, run_id),
             "approvals": [_approval_view(a) for a in pending_approvals(conn, run_id)],
         }
+
+    @app.post("/api/runs/{run_id}/fork", status_code=202)
+    def fork(run_id: str, body: ForkRunRequest | None = None) -> dict[str, Any]:
+        """Re-run from a step of an existing run, keeping its history before that step."""
+        request = body or ForkRunRequest()
+        _require_run(conn, run_id)
+        try:
+            new_id = fork_run(conn, run_id, at_step=request.at_step, input=request.input)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return {"id": new_id, "status": "PENDING", "forked_from": run_id}
 
     @app.get("/api/runs/{run_id}/approvals")
     def read_approvals(run_id: str) -> list[dict[str, Any]]:

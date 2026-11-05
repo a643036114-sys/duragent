@@ -154,6 +154,36 @@ def test_runs_can_be_listed_for_the_console():
     assert runs[0]["status"] == "PENDING"
 
 
+def test_a_run_can_be_forked_through_the_api():
+    client, app = make_client()
+    run_id = client.post("/api/runs", json={"workflow": "summary", "input": {"topic": "x"}}) \
+        .json()["id"]
+    app.state.worker.poll_once()
+
+    forked = client.post(f"/api/runs/{run_id}/fork", json={})
+
+    assert forked.status_code == 202
+    new_id = forked.json()["id"]
+    assert new_id != run_id
+    assert forked.json()["forked_from"] == run_id
+
+    app.state.worker.poll_once()
+    detail = client.get(f"/api/runs/{new_id}").json()
+    assert detail["status"] == "COMPLETED"
+    assert [step["step"] for step in detail["steps"]] == ["plan", "write"]
+
+
+def test_forking_at_an_unknown_step_is_a_400():
+    client, app = make_client()
+    run_id = client.post("/api/runs", json={"workflow": "summary", "input": {"topic": "x"}}) \
+        .json()["id"]
+    app.state.worker.poll_once()
+
+    response = client.post(f"/api/runs/{run_id}/fork", json={"at_step": "nope"})
+
+    assert response.status_code == 400
+
+
 def test_a_run_can_be_created_with_a_budget():
     client, app = make_client()
 
