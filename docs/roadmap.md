@@ -47,11 +47,16 @@ Give the library a notion of a *run* and plug it into LangGraph4j's node executi
 - [ ] soft limit (warn + emit an event) as opposed to the hard stop
 - [ ] per-node cost attribution table for a spend breakdown
 
-## 5. Scheduler and workers
+## 5. Scheduler and workers ✅
 
-- [ ] claimable run queue (`FOR UPDATE SKIP LOCKED` where available)
-- [ ] N workers, at-least-once run dispatch
-- [ ] heartbeat and re-dispatch on worker death
+- [x] `run_lease` table: one lease per run, primary key as the lock
+- [x] `RunQueue.claim`: candidates = `PENDING` or `RUNNING` with an expired lease
+- [x] heartbeat thread renews the lease while the executor works
+- [x] dead worker → lease expires → another worker takes over, journal replays the finished nodes
+- [x] `SUSPENDED` runs are excluded from dispatch
+- [x] no `SKIP LOCKED`: the same protocol on H2, PostgreSQL and MySQL
+- [ ] fairness / priority queues
+- [ ] concurrency limit per workflow
 
 ## 6. Replay and diff CLI
 

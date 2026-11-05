@@ -45,6 +45,11 @@ public record Run(
         return new Run(id, workflow, RunStatus.RUNNING, inputJson, stateJson, null, null, 1, 0, nowMs, nowMs);
     }
 
+    /** A fresh run waiting for a worker. */
+    public static Run enqueue(UUID id, String workflow, String inputJson, String stateJson, long nowMs) {
+        return new Run(id, workflow, RunStatus.PENDING, inputJson, stateJson, null, null, 0, 0, nowMs, nowMs);
+    }
+
     /**
      * Produces the next revision. Every persisted change goes through here, so the version
      * counter can never be forgotten by a caller.

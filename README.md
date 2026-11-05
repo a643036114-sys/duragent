@@ -79,6 +79,25 @@ spend the last cent twice. When a charge does not fit, nothing is billed:
 
 Every executed node spends one step automatically; a replayed node spends nothing.
 
+## Workers
+
+```java
+var queue  = new RunQueue(runStore, leaseStore);
+var worker = new Worker("worker-1", queue,
+        run -> new DurableGraph<>(graph, runs, run.id()).invoke(input),
+        Duration.ofSeconds(60),    // lease
+        Duration.ofSeconds(10));   // heartbeat
+
+worker.pollOnce();   // claims and executes at most one run
+```
+
+- A run is claimable when it is `PENDING`, or `RUNNING` with no live lease. `SUSPENDED` runs are
+  never claimable — they wait for a human, not for a worker.
+- The lease is renewed in the background while the executor works. A worker that dies simply
+  stops renewing, and the run is picked up again after expiry.
+- Delivery is at-least-once. Duplicate execution is bounded by the lease length and made
+  harmless by the step journal: the takeover replays finished nodes instead of repeating them.
+
 ## Modules
 
 | Module | What it is |
@@ -132,7 +151,7 @@ four statements run on H2, PostgreSQL and MySQL.
 ## Quickstart
 
 ```bash
-mvn test                              # 38 tests on embedded H2, no setup
+mvn test                              # 50 tests on embedded H2, no setup
 mvn test -Dtest=CrashResumeDemoTest   # crash + resume in the console
 ```
 
@@ -150,9 +169,9 @@ mvn test -Dtest=PostgresCompatibilityTest \
 
 ## Status
 
-`0.1.0-SNAPSHOT`, milestones 1–4 of 8. Durable steps, runs, checkpoints, human approvals,
-budgets and the LangGraph4j adapter work and are tested against H2 and PostgreSQL 16. Not
-production ready: no worker scheduler, no HTTP API yet.
+`0.1.0-SNAPSHOT`, milestones 1–5 of 8. Durable steps, runs, checkpoints, human approvals,
+budgets, workers and the LangGraph4j adapter work and are tested against H2 and PostgreSQL 16.
+Not production ready: no HTTP API yet.
 
 See [`docs/roadmap.md`](docs/roadmap.md) and the decision records in [`docs/adr/`](docs/adr/).
 

@@ -31,4 +31,11 @@ public interface RunStore {
     Optional<Checkpoint> latestCheckpoint(UUID runId);
 
     List<Checkpoint> checkpoints(UUID runId);
+
+    /**
+     * Runs that a worker may pick up: {@code PENDING}, or {@code RUNNING} with no live lease
+     * (i.e. the previous worker died). {@code SUSPENDED} runs are excluded - they are waiting for
+     * a human, not for a worker.
+     */
+    List<UUID> findClaimable(long nowMs, int limit);
 }

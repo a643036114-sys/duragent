@@ -50,8 +50,7 @@ CREATE TABLE IF NOT EXISTS run_approval (
     CONSTRAINT pk_run_approval PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS run_budget (
-    run_id            VARCHAR(64) NOT NULL,
+CREATE TABLE IF NOT EXISTS run_budget (    run_id            VARCHAR(64) NOT NULL,
     max_tokens        BIGINT,
     max_cost_micros   BIGINT,
     max_steps         INT,
@@ -62,4 +61,13 @@ CREATE TABLE IF NOT EXISTS run_budget (
     started_at_ms     BIGINT      NOT NULL,
     updated_at_ms     BIGINT      NOT NULL,
     CONSTRAINT pk_run_budget PRIMARY KEY (run_id)
+);
+
+CREATE TABLE IF NOT EXISTS run_lease (
+    run_id          VARCHAR(64)  NOT NULL,
+    worker_id       VARCHAR(191) NOT NULL,
+    leased_until_ms BIGINT       NOT NULL,
+    claimed_at_ms   BIGINT       NOT NULL,
+    heartbeat_at_ms BIGINT       NOT NULL,
+    CONSTRAINT pk_run_lease PRIMARY KEY (run_id)
 );

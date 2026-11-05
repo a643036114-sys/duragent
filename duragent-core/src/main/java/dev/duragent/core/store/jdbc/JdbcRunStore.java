@@ -64,6 +64,16 @@ public final class JdbcRunStore implements RunStore {
              ORDER BY seq ASC
             """;
 
+    private static final String SELECT_CLAIMABLE = """
+            SELECT r.id
+              FROM run r
+              LEFT JOIN run_lease l ON l.run_id = r.id
+             WHERE r.status = 'PENDING'
+                OR (r.status = 'RUNNING' AND (l.run_id IS NULL OR l.leased_until_ms < ?))
+             ORDER BY r.created_at_ms ASC
+             LIMIT ?
+            """;
+
     private final DataSource dataSource;
 
     public JdbcRunStore(DataSource dataSource) {
@@ -169,8 +179,25 @@ public final class JdbcRunStore implements RunStore {
         }
     }
 
-    private static Run map(ResultSet rs) throws SQLException {
-        return new Run(
+    @Override
+    public List<UUID> findClaimable(long nowMs, int limit) {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement(SELECT_CLAIMABLE)) {
+            ps.setLong(1, nowMs);
+            ps.setInt(2, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<UUID> ids = new ArrayList<>();
+                while (rs.next()) {
+                    ids.add(UUID.fromString(rs.getString("id")));
+                }
+                return ids;
+            }
+        } catch (SQLException e) {
+            throw new StepStoreException("claimable runs query failed", e);
+        }
+    }
+
+    private static Run map(ResultSet rs) throws SQLException {        return new Run(
                 UUID.fromString(rs.getString("id")),
                 rs.getString("workflow"),
                 RunStatus.valueOf(rs.getString("status")),

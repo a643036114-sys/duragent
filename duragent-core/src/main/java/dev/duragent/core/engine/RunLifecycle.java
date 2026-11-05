@@ -55,6 +55,15 @@ public final class RunLifecycle {
         return run;
     }
 
+    /** Creates a run that waits for a worker instead of starting immediately. */
+    public Run enqueue(String workflow, Map<String, Object> input) {
+        long now = clock.millis();
+        Run run = Run.enqueue(UUID.randomUUID(), workflow, json.toJson(input), json.toJson(Map.of()), now);
+        store.create(run);
+        log.debug("enqueued run {} workflow={}", run.id(), workflow);
+        return run;
+    }
+
     /** Records that {@code node} finished and what the graph state looks like now. */
     public Run checkpoint(UUID runId, String node, Map<String, Object> state) {
         String stateJson = json.toJson(state);
