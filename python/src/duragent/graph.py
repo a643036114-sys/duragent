@@ -12,9 +12,10 @@ import time
 import uuid
 from typing import Any, Callable
 
+from duragent.approvals import ApprovalRejected, ApprovalRequired, require_approval
 from duragent.steps import DEFAULT_LEASE_SECONDS, StepInProgress, run_step
 
-__all__ = ["Journal", "new_run_id", "StepInProgress"]
+__all__ = ["Journal", "new_run_id", "StepInProgress", "ApprovalRequired", "ApprovalRejected"]
 
 
 def new_run_id() -> str:
@@ -35,6 +36,11 @@ class Journal:
         @journal.durable("plan")
         def plan(state):
             return {"outline": [...]}
+
+    需要人工审批的节点：
+
+        graph.add_node("refund", journal.durable(
+            "refund", refund_fn, needs_approval=True, reason="refund 500 CNY"))
     """
 
     def __init__(
@@ -50,7 +56,14 @@ class Journal:
         self.lease = lease
         self.clock = clock
 
-    def durable(self, step_name: str, fn: Callable[[Any], Any] | None = None):
+    def durable(
+        self,
+        step_name: str,
+        fn: Callable[[Any], Any] | None = None,
+        *,
+        needs_approval: bool = False,
+        reason: str | Callable[[Any], str] | None = None,
+    ):
         """把 ``fn`` 包成一个"最多执行一次"的节点。
 
         ``step_name`` 必须在这个 run 内唯一——它就是幂等键。循环里同一个节点跑多次时，
@@ -60,6 +73,14 @@ class Journal:
         def wrap(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
             @functools.wraps(fn)
             def node(state):
+                gate = None
+                if needs_approval:
+                    # reason 可以是固定字符串，也可以是 state -> str 的函数。
+                    text = reason(state) if callable(reason) else reason
+                    gate = lambda: require_approval(  # noqa: E731
+                        self.conn, self.run_id, step_name, text, clock=self.clock
+                    )
+
                 # 注意：这里传的是 lambda，不是 fn(state) 的结果。
                 # run_step 只有在"确实该执行"时才会调用它，回放时根本不会碰 fn。
                 return run_step(
@@ -67,6 +88,7 @@ class Journal:
                     self.run_id,
                     step_name,
                     lambda: fn(state),
+                    before_execute=gate,
                     lease=self.lease,
                     clock=self.clock,
                 )

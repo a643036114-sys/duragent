@@ -21,6 +21,16 @@ class StepInProgress(RuntimeError):
     """Another worker owns this step right now. Not an error: just not your turn."""
 
 
+class Abort(RuntimeError):
+    """Control flow, not failure.
+
+    A step that was stopped by a guardrail (a pending approval, an exhausted
+    budget) never produced a result. Journaling it as FAILED would make it look
+    retryable and a later resume would silently skip the work it never did, so
+    the claim is released instead - as if the step had never started.
+    """
+
+
 @dataclass(frozen=True)
 class StepRecord:
     """One row of the journal."""
@@ -63,6 +73,7 @@ def run_step(
     step_name: str,
     fn: Callable[[], T],
     *,
+    before_execute: Callable[[], None] | None = None,
     lease: float = DEFAULT_LEASE_SECONDS,
     clock: Callable[[], float] = time.time,
 ) -> T:
@@ -71,9 +82,11 @@ def run_step(
     * first call  -> claim the step, run ``fn``, store the result
     * later calls -> return the stored result, ``fn`` is never called
     * a failure   -> recorded as FAILED, the next call retries it
+    * an abort    -> the claim is released, as if the step never started
     * a crash     -> the lease expires, another worker takes the step over
 
-    The result must be JSON-serialisable, because that is what the journal stores.
+    ``before_execute`` is the gate: it runs only when the step is really about to
+    execute (never on a replay), and raising from it aborts the step.
     """
     existing = find_step(conn, run_id, step_name)
     now = clock()
@@ -100,7 +113,15 @@ def run_step(
         _claim(conn, "status = 'FAILED'", run_id, step_name, now, lease_until)
 
     try:
+        if before_execute is not None:
+            before_execute()
         result = fn()
+    except Abort:
+        conn.execute(
+            "DELETE FROM step_record WHERE run_id = ? AND step_key = ? AND status = 'RUNNING'",
+            (run_id, step_name),
+        )
+        raise
     except Exception as exc:
         conn.execute(
             "UPDATE step_record SET status = 'FAILED', error_text = ?, finished_at = ?"
