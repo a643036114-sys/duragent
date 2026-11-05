@@ -79,6 +79,12 @@ public final class RunLifecycle {
                 current.cursor(), reason, clock.millis()));
     }
 
+    /** Stops a run on purpose: a guardrail tripped, or a human pressed stop. State is preserved. */
+    public Run cancel(UUID runId, String reason) {
+        return mutate(runId, current -> current.revise(RunStatus.CANCELED, current.stateJson(),
+                current.cursor(), reason, clock.millis()));
+    }
+
     /** Puts a parked run back to work and counts a new attempt. */
     public Run resume(UUID runId) {
         return mutate(runId, current -> current.resumeAt(clock.millis()));

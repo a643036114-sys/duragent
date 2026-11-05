@@ -135,6 +135,16 @@ public final class DurableSteps {
         try {
             output = body.apply(input);
         } catch (Throwable failure) {
+            Throwable abort = findAbort(failure);
+            if (abort != null) {
+                // The step never produced a result and must not look retryable. Releasing the
+                // claim lets a later resume (with a raised budget) execute it again.
+                store.abort(id, key);
+                log.warn("aborted step {}/{}: {}", id, key, abort.getMessage());
+                if (abort instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+            }
             store.fail(id, key, describe(failure), clock.millis());
             if (failure instanceof Error error) {
                 throw error;
@@ -150,8 +160,27 @@ public final class DurableSteps {
         return output;
     }
 
-    private static String describe(Throwable failure) {
-        String message = failure.getMessage();
+    /**
+     * Abort signals often arrive wrapped: a node runs on another thread, so a
+     * {@code CompletableFuture} wraps the original exception in a completion wrapper. Look through
+     * the cause chain so a budget stop is recognised wherever it was raised.
+     */
+    private static Throwable findAbort(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; depth < 10 && current != null; depth++) {
+            if (current instanceof AbortSignal) {
+                return current;
+            }
+            Throwable cause = current.getCause();
+            if (cause == null || cause == current) {
+                return null;
+            }
+            current = cause;
+        }
+        return null;
+    }
+
+    private static String describe(Throwable failure) {        String message = failure.getMessage();
         String text = failure.getClass().getSimpleName() + (message == null ? "" : ": " + message);
         return text.length() <= 4000 ? text : text.substring(0, 4000);
     }

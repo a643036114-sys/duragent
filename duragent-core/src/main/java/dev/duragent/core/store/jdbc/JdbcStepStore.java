@@ -80,6 +80,11 @@ public final class JdbcStepStore implements StepStore {
              WHERE run_id = ? AND step_key = ? AND status = 'RUNNING'
             """;
 
+    private static final String ABORT = """
+            DELETE FROM step_record
+             WHERE run_id = ? AND step_key = ? AND status = 'RUNNING'
+            """;
+
     private final DataSource dataSource;
 
     public JdbcStepStore(DataSource dataSource) {
@@ -159,6 +164,14 @@ public final class JdbcStepStore implements StepStore {
             ps.setString(3, runId);
             ps.setString(4, stepKey);
         }, "fail failed for " + runId + "/" + stepKey);
+    }
+
+    @Override
+    public boolean abort(String runId, String stepKey) {
+        return conditionalUpdate(ABORT, ps -> {
+            ps.setString(1, runId);
+            ps.setString(2, stepKey);
+        }, "abort failed for " + runId + "/" + stepKey);
     }
 
     private boolean conditionalUpdate(String sql, StatementBinder binder, String errorMessage) {

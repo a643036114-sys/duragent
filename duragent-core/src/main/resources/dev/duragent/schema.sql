@@ -49,3 +49,17 @@ CREATE TABLE IF NOT EXISTS run_approval (
     decided_at_ms   BIGINT,
     CONSTRAINT pk_run_approval PRIMARY KEY (id)
 );
+
+CREATE TABLE IF NOT EXISTS run_budget (
+    run_id            VARCHAR(64) NOT NULL,
+    max_tokens        BIGINT,
+    max_cost_micros   BIGINT,
+    max_steps         INT,
+    max_wall_clock_ms BIGINT,
+    used_tokens       BIGINT      NOT NULL,
+    used_cost_micros  BIGINT      NOT NULL,
+    used_steps        INT         NOT NULL,
+    started_at_ms     BIGINT      NOT NULL,
+    updated_at_ms     BIGINT      NOT NULL,
+    CONSTRAINT pk_run_budget PRIMARY KEY (run_id)
+);

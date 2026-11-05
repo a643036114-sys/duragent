@@ -36,12 +36,16 @@ Give the library a notion of a *run* and plug it into LangGraph4j's node executi
 - [ ] timeout policy per approval (approve / reject / escalate)
 - [ ] HTTP endpoints so a UI can list pending approvals
 
-## 4. Budgets and guardrails
+## 4. Budgets and guardrails ✅
 
-- [ ] token, money, step-count and wall-clock budgets per run
-- [ ] soft limit (warn + record) vs hard limit (abort with a preserved state)
-- [ ] per-step cost attribution
-- [ ] demo: a loop that burns money, stopped at $0.50
+- [x] token, money, step-count and wall-clock budgets per run
+- [x] atomic charge: one conditional `UPDATE`, so two workers cannot spend the last cent twice
+- [x] hard limit aborts the run as `CANCELED` with state preserved
+- [x] abort releases the step claim instead of poisoning the journal (ADR 0004)
+- [x] `raise` + `resume` finishes the run without restarting it from zero
+- [x] metering: one step per executed node, token/money charged by the node itself
+- [ ] soft limit (warn + emit an event) as opposed to the hard stop
+- [ ] per-node cost attribution table for a spend breakdown
 
 ## 5. Scheduler and workers
 

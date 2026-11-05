@@ -53,4 +53,14 @@ public interface StepStore {
      * @return false when the caller no longer owns the claim
      */
     boolean fail(String runId, String stepKey, String error, long finishedAtMs);
+
+    /**
+     * Releases a claim that was interrupted by an abort signal, leaving no trace.
+     *
+     * <p>Used for budget and wall-clock aborts: the step never produced a result, and a later
+     * resume with a raised budget must execute it again.
+     *
+     * @return false when the caller no longer owns the claim
+     */
+    boolean abort(String runId, String stepKey);
 }

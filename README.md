@@ -60,6 +60,25 @@ approvals.approve(approvalId, "manager@corp", "ok, customer is VIP");
 The next invoke replays `plan` for free and executes the refund exactly once. A rejection turns
 the approval into a terminal `FAILED` run instead.
 
+## Budgets
+
+```java
+budgets.set(runId, Budget.of(200_000, 500_000, 30, Duration.ofMinutes(10)));  // tokens, cost, steps, wall clock
+
+// inside a node, where the cost is actually known:
+budgets.charge(runId, answer.tokens(), answer.costMicros(), 0);
+```
+
+A charge is a single conditional `UPDATE ... WHERE used + delta <= max`, so two workers cannot
+spend the last cent twice. When a charge does not fit, nothing is billed:
+
+- the run becomes `CANCELED`, state preserved;
+- the step is released rather than marked `FAILED`, so it is not silently skipped later
+  ([ADR 0004](docs/adr/0004-aborts-do-not-poison-the-journal.md));
+- `budgets.raise(...)` then `runs.resume(...)` finishes the run without starting over.
+
+Every executed node spends one step automatically; a replayed node spends nothing.
+
 ## Modules
 
 | Module | What it is |
@@ -81,7 +100,7 @@ Duragent is the open, framework-agnostic, JVM-native piece:
 | Re-run protection | exactly-once is a myth; use idempotency keys | persists each step result under a stable key |
 | Crash recovery | worker leases + takeover | `lease_expires_at_ms`, conditional `UPDATE` |
 | Long human approvals | durable timers | run parks as `SUSPENDED`, no thread held |
-| Cost control | budgets | planned: token / money / step / wall-clock caps |
+| Cost control | budgets in the prompt, and hope | atomic spend ledger, hard stop, raise-and-resume |
 ## How a step executes
 
 ```
@@ -113,7 +132,7 @@ four statements run on H2, PostgreSQL and MySQL.
 ## Quickstart
 
 ```bash
-mvn test                              # 28 tests on embedded H2, no setup
+mvn test                              # 38 tests on embedded H2, no setup
 mvn test -Dtest=CrashResumeDemoTest   # crash + resume in the console
 ```
 
@@ -131,9 +150,9 @@ mvn test -Dtest=PostgresCompatibilityTest \
 
 ## Status
 
-`0.1.0-SNAPSHOT`, milestones 1–3 of 8. Durable steps, runs, checkpoints, human approvals and the
-LangGraph4j adapter work and are tested against H2 and PostgreSQL 16. Not production ready: no
-budgets, no worker scheduler, no HTTP API yet.
+`0.1.0-SNAPSHOT`, milestones 1–4 of 8. Durable steps, runs, checkpoints, human approvals,
+budgets and the LangGraph4j adapter work and are tested against H2 and PostgreSQL 16. Not
+production ready: no worker scheduler, no HTTP API yet.
 
 See [`docs/roadmap.md`](docs/roadmap.md) and the decision records in [`docs/adr/`](docs/adr/).
 
