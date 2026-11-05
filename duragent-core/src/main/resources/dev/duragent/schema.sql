@@ -35,3 +35,17 @@ CREATE TABLE IF NOT EXISTS run_checkpoint (
     created_at_ms BIGINT       NOT NULL,
     CONSTRAINT pk_run_checkpoint PRIMARY KEY (run_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS run_approval (
+    id              VARCHAR(64)  NOT NULL,
+    run_id          VARCHAR(64)  NOT NULL,
+    node            VARCHAR(191) NOT NULL,
+    reason          TEXT,
+    status          VARCHAR(24)  NOT NULL,
+    requested_by    VARCHAR(191),
+    decided_by      VARCHAR(191),
+    comment_text    TEXT,
+    requested_at_ms BIGINT       NOT NULL,
+    decided_at_ms   BIGINT,
+    CONSTRAINT pk_run_approval PRIMARY KEY (id)
+);

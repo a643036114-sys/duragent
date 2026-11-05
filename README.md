@@ -41,6 +41,25 @@ If the JVM dies inside `summarize`, the next invoke replays `plan` from the jour
 call, no cost), retries `summarize`, and runs `publish` once. See
 [ADR 0003](docs/adr/0003-replay-instead-of-snapshot.md) for why replay beats snapshot restore.
 
+## Human in the loop
+
+```java
+var nodes = new DurableNodeActions(runId, steps, runs, approvals);
+
+.addNode("refund", nodes.durableWithApproval("refund",
+        "refund 500 CNY to the customer", "refund-agent", refundAction))
+```
+
+The first invoke throws `ApprovalRequiredException` and the run sits as `SUSPENDED` — no thread
+is held, no timer is set, the process can exit. Days later:
+
+```java
+approvals.approve(approvalId, "manager@corp", "ok, customer is VIP");
+```
+
+The next invoke replays `plan` for free and executes the refund exactly once. A rejection turns
+the approval into a terminal `FAILED` run instead.
+
 ## Modules
 
 | Module | What it is |
@@ -63,7 +82,6 @@ Duragent is the open, framework-agnostic, JVM-native piece:
 | Crash recovery | worker leases + takeover | `lease_expires_at_ms`, conditional `UPDATE` |
 | Long human approvals | durable timers | run parks as `SUSPENDED`, no thread held |
 | Cost control | budgets | planned: token / money / step / wall-clock caps |
-
 ## How a step executes
 
 ```
@@ -95,7 +113,7 @@ four statements run on H2, PostgreSQL and MySQL.
 ## Quickstart
 
 ```bash
-mvn test                              # 18 tests on embedded H2, no setup
+mvn test                              # 28 tests on embedded H2, no setup
 mvn test -Dtest=CrashResumeDemoTest   # crash + resume in the console
 ```
 
@@ -113,9 +131,9 @@ mvn test -Dtest=PostgresCompatibilityTest \
 
 ## Status
 
-`0.1.0-SNAPSHOT`, milestones 1–2 of 8. Durable steps, runs, checkpoints and the LangGraph4j
-adapter work and are tested against H2 and PostgreSQL 16. Not production ready: no approvals,
-no budgets, no worker scheduler yet.
+`0.1.0-SNAPSHOT`, milestones 1–3 of 8. Durable steps, runs, checkpoints, human approvals and the
+LangGraph4j adapter work and are tested against H2 and PostgreSQL 16. Not production ready: no
+budgets, no worker scheduler, no HTTP API yet.
 
 See [`docs/roadmap.md`](docs/roadmap.md) and the decision records in [`docs/adr/`](docs/adr/).
 

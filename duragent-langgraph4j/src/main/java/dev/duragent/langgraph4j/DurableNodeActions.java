@@ -1,6 +1,7 @@
 package dev.duragent.langgraph4j;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import dev.duragent.core.engine.Approvals;
 import dev.duragent.core.engine.DurableSteps;
 import dev.duragent.core.engine.RunLifecycle;
 import org.bsc.langgraph4j.action.AsyncNodeAction;
@@ -16,14 +17,15 @@ import java.util.concurrent.CompletableFuture;
  * Turns a LangGraph4j node into a durable step.
  *
  * <pre>{@code
- * var nodes = new DurableNodeActions(runId, steps, runs);
+ * var nodes = new DurableNodeActions(runId, steps, runs, approvals);
  *
  * var graph = new StateGraph<AgentState>(AgentState::new)
- *         .addNode("plan",      nodes.durable("plan",      planAction))
- *         .addNode("summarize", nodes.durable("summarize", summarizeAction))
+ *         .addNode("plan",   nodes.durable("plan", planAction))
+ *         .addNode("refund", nodes.durableWithApproval("refund",
+ *                                   "refund 500 CNY to customer", "ticket-agent", refundAction))
  *         .addEdge(START, "plan")
- *         .addEdge("plan", "summarize")
- *         .addEdge("summarize", END)
+ *         .addEdge("plan", "refund")
+ *         .addEdge("refund", END)
  *         .compile();
  * }</pre>
  *
@@ -47,17 +49,24 @@ public final class DurableNodeActions {
     private final UUID runId;
     private final DurableSteps steps;
     private final RunLifecycle runs;
+    private final Approvals approvals;
 
     /** Durable steps only, no run checkpoints. */
     public DurableNodeActions(UUID runId, DurableSteps steps) {
-        this(runId, steps, null);
+        this(runId, steps, null, null);
     }
 
     /** Durable steps plus a checkpoint after every node, so the run has a timeline. */
     public DurableNodeActions(UUID runId, DurableSteps steps, RunLifecycle runs) {
+        this(runId, steps, runs, null);
+    }
+
+    /** Full setup: durable steps, checkpoints and approval gates. */
+    public DurableNodeActions(UUID runId, DurableSteps steps, RunLifecycle runs, Approvals approvals) {
         this.runId = Objects.requireNonNull(runId, "runId");
         this.steps = Objects.requireNonNull(steps, "steps");
         this.runs = runs;
+        this.approvals = approvals;
     }
 
     /**
@@ -66,18 +75,40 @@ public final class DurableNodeActions {
      */
     public <S extends AgentState> AsyncNodeAction<S> durable(String nodeName, AsyncNodeAction<S> action) {
         Objects.requireNonNull(action, "action");
-        return state -> CompletableFuture.supplyAsync(() -> {
-            Map<String, Object> delta = steps.run(runId, nodeName, DELTA,
-                    () -> action.apply(state).join());
+        return state -> CompletableFuture.supplyAsync(() -> runStep(nodeName, state, action));
+    }
 
-            if (runs != null) {
-                Map<String, Object> merged = new LinkedHashMap<>(state.data());
-                if (delta != null) {
-                    merged.putAll(delta);
-                }
-                runs.checkpoint(runId, nodeName, merged);
-            }
-            return delta;
+    /**
+     * Same as {@link #durable}, but the node only runs once a human approved it. The first call
+     * parks the run and throws {@code ApprovalRequiredException}; after {@code approve} the next
+     * invoke replays everything before this node and executes it for real.
+     */
+    public <S extends AgentState> AsyncNodeAction<S> durableWithApproval(
+            String nodeName, String reason, String requestedBy, AsyncNodeAction<S> action) {
+        Objects.requireNonNull(action, "action");
+        if (approvals == null) {
+            throw new IllegalStateException("durableWithApproval needs an Approvals instance");
+        }
+        return state -> CompletableFuture.supplyAsync(() -> {
+            // Checked before the step claim so an approval pause is never journaled as a failed
+            // step. On replay the stored APPROVED row makes this a no-op.
+            approvals.requireApproval(runId, nodeName, reason, requestedBy);
+            return runStep(nodeName, state, action);
         });
+    }
+
+    private <S extends AgentState> Map<String, Object> runStep(
+            String nodeName, S state, AsyncNodeAction<S> action) {
+        Map<String, Object> delta = steps.run(runId, nodeName, DELTA,
+                () -> action.apply(state).join());
+
+        if (runs != null) {
+            Map<String, Object> merged = new LinkedHashMap<>(state.data());
+            if (delta != null) {
+                merged.putAll(delta);
+            }
+            runs.checkpoint(runId, nodeName, merged);
+        }
+        return delta;
     }
 }

@@ -26,12 +26,15 @@ Give the library a notion of a *run* and plug it into LangGraph4j's node executi
       node 3 runs once
 - [ ] demo: 5-node agent with a real JVM kill (not an exception) + `docker compose`
 
-## 3. Approvals (human in the loop)
+## 3. Approvals (human in the loop) ✅
 
-- [ ] `suspend(runId, reason)` — no thread sleeps, the run is parked in the database
-- [ ] `approve(runId, decision)` — resumes from the parked step
+- [x] `request` parks the run as `SUSPENDED` — no thread sleeps
+- [x] `approve` / `reject` resume or fail the run; first decision wins
+- [x] idempotent requests: one `PENDING` row per `(run, node)`
+- [x] `durableWithApproval` node wrapper; an approval pause is not a step failure
+- [x] test: refund node parks, manager approves, refund executes once
 - [ ] timeout policy per approval (approve / reject / escalate)
-- [ ] demo: refund flow that waits two days for a manager
+- [ ] HTTP endpoints so a UI can list pending approvals
 
 ## 4. Budgets and guardrails
 
