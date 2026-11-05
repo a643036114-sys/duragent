@@ -120,7 +120,18 @@ class Worker:
         return expire_stale(self.conn, clock=self.clock)
 
     def close(self) -> None:
+        """Stop the threads and hand back any lease this worker still holds.
+
+        Without the release, a redeploy would leave runs leased for the full
+        lease duration - nobody else may take them, and nothing is running.
+        """
         self._stop.set()
+        for run_id in list(self._in_flight):
+            try:
+                release(self.conn, run_id, self.worker_id)
+            except Exception:  # closing must not raise
+                pass
+        self._in_flight.clear()
         for thread in (self._thread, self._sweep_thread):
             if thread is not None:
                 thread.join(timeout=2)

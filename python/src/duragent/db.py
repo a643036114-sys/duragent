@@ -30,6 +30,7 @@ SCHEMA = [
         started_at    DOUBLE PRECISION NOT NULL,
         finished_at   DOUBLE PRECISION,
         lease_until   DOUBLE PRECISION NOT NULL,
+        input_hash    TEXT,
         PRIMARY KEY (run_id, step_key)
     )
     """,
@@ -91,6 +92,7 @@ SCHEMA = [
 ADDED_COLUMNS = [
     ("approval", "expires_at", "DOUBLE PRECISION"),
     ("run", "not_before", "DOUBLE PRECISION"),
+    ("step_record", "input_hash", "TEXT"),
 ]
 
 

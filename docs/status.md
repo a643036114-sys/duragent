@@ -16,11 +16,13 @@ Where the project stands, so a break of a few days does not cost a day of re-rea
 | HTTP API: create, inspect, approve | `python/src/duragent/api.py` | `tests/test_api.py` |
 | `kill -9` mid-step is recovered | — | `tests/test_hardening.py` |
 | SQLite **and** PostgreSQL | `python/src/duragent/db.py` | `tests/test_postgres.py` |
-| Retry backoff, approval deadlines, sweep thread | `retry.py`, `runs.py`, `worker.py` | `tests/test_retry.py`, `test_approval_expiry.py`, `test_scheduling.py` |
+| Retry backoff, approval deadlines, sweep thread | `retry.py`, `runs.py`, `worker.py` | `test_retry.py`, `test_approval_expiry.py`, `test_scheduling.py` |
+| Input fingerprints catch stale replays | `graph.py` + `steps.py` | `tests/test_fingerprint.py` |
+| CLI (`duragent inspect`) and `/metrics` | `cli.py`, `api.py` | `tests/test_operator_surface.py` |
 
 ```bash
-cd python && python -m pytest -q                                   # 66 passed, 6 skipped
-DURAGENT_PG_URL=postgresql://... python -m pytest -q               # 72 passed
+cd python && python -m pytest -q                                   # 76 passed, 6 skipped
+DURAGENT_PG_URL=postgresql://... python -m pytest -q               # 82 passed
 ```
 
 Demos: `examples/crash_demo.py`, `approval_demo.py`, `budget_demo.py`, `worker_demo.py`,
@@ -37,7 +39,6 @@ step-name identity, no retry policy, approvals never expire, SQLite only, no aut
    are now complete enough to be shown.
 2. **Fairness.** `claim` takes the oldest run first; one noisy workflow can starve the rest.
 3. **Real migrations.** Additive columns are handled; anything else is not.
-
 Also open: the JVM tree in `java/` has the same "non-serialisable result leaves the claim
 RUNNING" bug that was fixed in Python. Worth fixing when the Java tree gets touched again.
 

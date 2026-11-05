@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from duragent.approvals import approve, pending_approvals, reject
@@ -130,6 +131,26 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> str:
+        """Prometheus text format. Small on purpose: three questions an operator asks."""
+        lines = ["# TYPE duragent_runs gauge"]
+        for row in conn.execute("SELECT status, count(*) AS n FROM run GROUP BY status").fetchall():
+            lines.append(f'duragent_runs{{status="{row["status"]}"}} {row["n"]}')
+
+        lines.append("# TYPE duragent_steps gauge")
+        for row in conn.execute(
+            "SELECT status, count(*) AS n FROM step_record GROUP BY status"
+        ).fetchall():
+            lines.append(f'duragent_steps{{status="{row["status"]}"}} {row["n"]}')
+
+        spent = conn.execute(
+            "SELECT coalesce(sum(used_cost_micros), 0) AS total FROM budget"
+        ).fetchone()
+        lines.append("# TYPE duragent_spend_micros counter")
+        lines.append(f"duragent_spend_micros {spent['total']}")
+        return "\n".join(lines) + "\n"
 
     return app
 

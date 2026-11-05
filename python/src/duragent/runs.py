@@ -56,17 +56,7 @@ def enqueue(conn, workflow: str, payload: dict[str, Any] | None = None,
 
 def get_run(conn, run_id: str) -> Run | None:
     row = conn.execute("SELECT * FROM run WHERE id = ?", (run_id,)).fetchone()
-    if row is None:
-        return None
-    return Run(
-        id=row["id"],
-        workflow=row["workflow"],
-        status=row["status"],
-        input=json.loads(row["input_json"] or "{}"),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        not_before=row["not_before"],
-    )
+    return None if row is None else _to_run(row)
 
 
 def set_status(conn, run_id: str, status: str, *,
@@ -84,6 +74,27 @@ def schedule(conn, run_id: str, not_before: float, *,
     conn.execute(
         "UPDATE run SET not_before = ?, updated_at = ? WHERE id = ?",
         (not_before, clock(), run_id),
+    )
+
+
+def list_runs(conn, limit: int = 20) -> list[Run]:
+    """Most recent runs first. Handy for the CLI and for an operator view."""
+    rows = conn.execute(
+        "SELECT * FROM run ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [_to_run(row) for row in rows]
+
+
+def _to_run(row) -> Run:
+    return Run(
+        id=row["id"],
+        workflow=row["workflow"],
+        status=row["status"],
+        input=json.loads(row["input_json"] or "{}"),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        not_before=row["not_before"],
     )
 
 

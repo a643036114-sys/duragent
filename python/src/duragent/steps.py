@@ -32,6 +32,25 @@ class Abort(RuntimeError):
     """
 
 
+class InputChanged(RuntimeError):
+    """The step already ran, but on a different input.
+
+    This is the "I tweaked the prompt and the answer did not change" bug. The
+    journal is keyed by step name, so a replay happily returns the old result;
+    fingerprinting the input turns that silent surprise into an error.
+
+    Start a new run id when you actually want new work.
+    """
+
+    def __init__(self, run_id: str, step_name: str):
+        super().__init__(
+            f"{run_id}/{step_name} already ran on a different input; "
+            "use a new run id to execute it again"
+        )
+        self.run_id = run_id
+        self.step_name = step_name
+
+
 @dataclass(frozen=True)
 class StepRecord:
     """One row of the journal."""
@@ -45,6 +64,7 @@ class StepRecord:
     started_at: float
     finished_at: float | None
     lease_until: float
+    input_hash: str | None = None
 
 
 def find_step(conn: Connection, run_id: str, step_name: str) -> StepRecord | None:
@@ -76,6 +96,7 @@ def _to_record(row) -> StepRecord:
         started_at=row["started_at"],
         finished_at=row["finished_at"],
         lease_until=row["lease_until"],
+        input_hash=row["input_hash"],
     )
 
 
@@ -87,6 +108,7 @@ def run_step(
     *,
     before_execute: Callable[[], None] | None = None,
     retry: Retry | None = None,
+    fingerprint: str | None = None,
     lease: float = DEFAULT_LEASE_SECONDS,
     clock: Callable[[], float] = time.time,
 ) -> T:
@@ -103,6 +125,10 @@ def run_step(
 
     ``retry`` turns a recent failure into :class:`RetryLater` instead of running
     again immediately, and :class:`RetriesExhausted` once the attempts are used up.
+
+    ``fingerprint`` is an opaque hash of the step's input. When given, a replay
+    whose fingerprint differs raises :class:`InputChanged` instead of returning a
+    result that belongs to a different input.
     """
     if not isinstance(step_name, str) or not step_name.strip():
         raise ValueError("step_name must be a non-empty string")
@@ -110,15 +136,18 @@ def run_step(
     existing = find_step(conn, run_id, step_name)
     now = clock()
     if existing is not None and existing.status == "SUCCEEDED":
+        if fingerprint is not None and existing.input_hash not in (None, fingerprint):
+            raise InputChanged(run_id, step_name)
         return json.loads(existing.output_json)  # replay: the whole point
 
     lease_until = now + lease
     if existing is None:
         try:
             conn.execute(
-                "INSERT INTO step_record (run_id, step_key, status, attempt, started_at, lease_until)"
-                " VALUES (?, ?, 'RUNNING', 1, ?, ?)",
-                (run_id, step_name, now, lease_until),
+                "INSERT INTO step_record"
+                " (run_id, step_key, status, attempt, started_at, lease_until, input_hash)"
+                " VALUES (?, ?, 'RUNNING', 1, ?, ?, ?)",
+                (run_id, step_name, now, lease_until, fingerprint),
             )
         except IntegrityError:
             # Another worker inserted between our read and our write.

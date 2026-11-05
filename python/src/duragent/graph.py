@@ -8,6 +8,8 @@ LangGraph 的节点就是一个普通函数：``state -> dict``。正因为它�
 from __future__ import annotations
 
 import functools
+import hashlib
+import json
 import time
 import uuid
 from typing import Any, Callable
@@ -15,18 +17,34 @@ from typing import Any, Callable
 from duragent.approvals import ApprovalRejected, ApprovalRequired, require_approval
 from duragent.budgets import charge as charge_budget
 from duragent.retry import RetriesExhausted, Retry, RetryLater
-from duragent.steps import DEFAULT_LEASE_SECONDS, StepInProgress, run_step
+from duragent.steps import (
+    DEFAULT_LEASE_SECONDS,
+    InputChanged,
+    StepInProgress,
+    run_step,
+)
 
 __all__ = [
     "Journal",
     "new_run_id",
     "StepInProgress",
+    "InputChanged",
     "ApprovalRequired",
     "ApprovalRejected",
     "Retry",
     "RetryLater",
     "RetriesExhausted",
 ]
+
+
+def _fingerprint(state: Any) -> str:
+    """A stable hash of the node's input.
+
+    Dict ordering is normalised and anything that is not JSON falls back to
+    ``str``, so the same logical state produces the same digest across processes.
+    """
+    payload = json.dumps(state, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
 def new_run_id() -> str:
@@ -76,11 +94,15 @@ class Journal:
         reason: str | Callable[[Any], str] | None = None,
         expires_in: float | None = None,
         retry: Retry | None = None,
+        fingerprint: bool = False,
     ):
         """把 ``fn`` 包成一个"最多执行一次"的节点。
 
         ``step_name`` 必须在这个 run 内唯一——它就是幂等键。循环里同一个节点跑多次时，
         要么用 ``charge#1`` / ``charge#2`` 区分，要么等后面加自动计数。
+
+        ``fingerprint=True`` 会记住这次输入的样子；如果之后用同一个 run 但输入变了，
+        回放会抛 ``InputChanged`` 而不是悄悄返回旧结果。
         """
 
         def wrap(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
@@ -104,6 +126,7 @@ class Journal:
                     lambda: self._work(state, fn),
                     before_execute=gate,
                     retry=retry,
+                    fingerprint=_fingerprint(state) if fingerprint else None,
                     lease=self.lease,
                     clock=self.clock,
                 )
@@ -116,6 +139,17 @@ class Journal:
     def charge(self, *, tokens: int = 0, cost: float = 0.0, steps: int = 0):
         """节点里上报本次花费。没有设置预算时是空操作。"""
         return charge_budget(self.conn, self.run_id, tokens=tokens, cost=cost, steps=steps)
+
+    def key(self, step_name: str) -> str:
+        """A stable idempotency key to hand to a downstream API.
+
+            payments.charge(amount, idempotency_key=journal.key("refund"))
+
+        This is what closes the window the journal cannot: if the process dies
+        after the payment but before the result is stored, the retry sends the
+        same key and the provider deduplicates it.
+        """
+        return f"{self.run_id}:{step_name}"
 
     def _work(self, state, fn):
         """真正执行时做的事：跑节点，然后扣掉这一步的额度。
