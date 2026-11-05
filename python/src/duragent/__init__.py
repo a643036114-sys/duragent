@@ -3,16 +3,20 @@
 The idea in one sentence: every step's result is written to a database before
 the next step starts, so a crash replays results instead of repeating work.
 
-    from duragent import connect, run_step
+    from duragent import Journal, connect
 
     conn = connect("agent.db")
-    answer = run_step(conn, run_id, "summarize", lambda: llm(prompt))
+    journal = Journal(conn, run_id)
 
-Call it again - in a new process, after a restart - and the lambda does not
-run. The stored result is returned instead.
+    answer = journal.durable("summarize", lambda state: llm.invoke(state["prompt"]))(state)
+
+Or, inside a LangGraph graph:
+
+    graph.add_node("summarize", journal.durable("summarize", summarize_fn))
 """
 
 from duragent.db import connect, init_schema
+from duragent.graph import Journal, new_run_id
 from duragent.steps import (
     StepInProgress,
     StepRecord,
@@ -25,6 +29,8 @@ __all__ = [
     "init_schema",
     "find_step",
     "run_step",
+    "Journal",
+    "new_run_id",
     "StepRecord",
     "StepInProgress",
 ]

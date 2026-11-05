@@ -25,6 +25,30 @@ pytest
 
 No runtime dependencies. SQLite is in the standard library; the SQL runs unchanged on Postgres.
 
+## With LangGraph
+
+A LangGraph node is just a function `state -> dict`, so wrapping it is enough:
+
+```python
+from duragent import Journal, connect, new_run_id
+
+journal = Journal(connect("agent.db"), new_run_id())
+
+builder.add_node("plan", journal.durable("plan", plan_fn))
+builder.add_node("write", journal.durable("write", write_fn))
+```
+
+Or as a decorator:
+
+```python
+@journal.durable("plan")
+def plan(state):
+    return {"outline": [...]}
+```
+
+See [`examples/crash_demo.py`](examples/crash_demo.py) for a three-node graph that crashes in the
+middle and resumes without repeating the first node.
+
 ## What it guarantees
 
 | Situation | Behaviour |
