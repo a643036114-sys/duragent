@@ -98,3 +98,12 @@ __all__ = [
     "FAILED",
     "CANCELED",
 ]
+
+
+def __getattr__(name: str):
+    """Keep the package import-free of web dependencies until someone asks for the API."""
+    if name == "create_app":
+        from duragent.api import create_app
+
+        return create_app
+    raise AttributeError(f"module 'duragent' has no attribute {name!r}")

@@ -85,6 +85,28 @@ The worker turns exceptions into run states, which is the one place worth readin
 | `BudgetExceeded` | `CANCELED` — a guardrail stopped it |
 | anything else | `FAILED` |
 
+## HTTP API
+
+```bash
+pip install -e ".[api]"
+python examples/api_app.py
+```
+
+```bash
+curl -X POST localhost:8000/api/runs -H 'content-type: application/json' \
+     -d '{"workflow":"refund","input":{"amount":500}}'
+# {"id":"9c987f79-...","status":"PENDING"}
+
+curl localhost:8000/api/runs/<id>
+# {"status":"SUSPENDED","steps":[{"step":"plan",...}],"approvals":[{...}]}
+
+curl -X POST localhost:8000/api/approvals/<aid>/approve \
+     -H 'content-type: application/json' -d '{"by":"manager@corp"}'
+
+curl localhost:8000/api/runs/<id>
+# {"status":"COMPLETED","steps":[plan, refund, notify]}
+```
+
 ## What it guarantees
 
 | Situation | Behaviour |

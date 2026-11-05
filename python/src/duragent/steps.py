@@ -52,8 +52,19 @@ def find_step(conn: sqlite3.Connection, run_id: str, step_name: str) -> StepReco
         "SELECT * FROM step_record WHERE run_id = ? AND step_key = ?",
         (run_id, step_name),
     ).fetchone()
-    if row is None:
-        return None
+    return None if row is None else _to_record(row)
+
+
+def list_steps(conn: sqlite3.Connection, run_id: str) -> list[StepRecord]:
+    """Every journal entry of a run, in the order the steps started."""
+    rows = conn.execute(
+        "SELECT * FROM step_record WHERE run_id = ? ORDER BY started_at, step_key",
+        (run_id,),
+    ).fetchall()
+    return [_to_record(row) for row in rows]
+
+
+def _to_record(row) -> StepRecord:
     return StepRecord(
         run_id=row["run_id"],
         step_key=row["step_key"],

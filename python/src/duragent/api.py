@@ -1,0 +1,170 @@
+"""HTTP surface.
+
+Deliberately small: five endpoints. The interesting part of the project is not
+the web layer, and a bigger API would only hide that.
+
+    app = create_app(conn, {"summary": run_summary}, autostart=True)
+    uvicorn.run(app)
+
+Endpoints:
+
+    POST /api/runs                       {workflow, input}
+    GET  /api/runs/{run_id}              status + steps + budget + approvals
+    GET  /api/runs/{run_id}/approvals    pending approvals
+    POST /api/approvals/{id}/approve     {by, comment}
+    POST /api/approvals/{id}/reject      {by, comment}
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from duragent.approvals import approve, pending_approvals, reject
+from duragent.budgets import budget_for, usage
+from duragent.runs import enqueue, get_run
+from duragent.steps import list_steps
+from duragent.worker import Handler, Worker
+
+
+class CreateRunRequest(BaseModel):
+    workflow: str
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecisionRequest(BaseModel):
+    by: str = "http"
+    comment: str | None = None
+
+
+def create_app(
+    conn,
+    workflows: dict[str, Handler],
+    *,
+    worker_id: str = "api-worker",
+    autostart: bool = False,
+    poll_interval: float = 0.2,
+    lease: float = 30.0,
+    heartbeat_every: float = 5.0,
+) -> FastAPI:
+    """Build the app around one connection and a set of workflow handlers.
+
+    ``autostart`` runs a poll loop in a daemon thread, which is what makes the
+    demo feel alive: POST a run and watch it move. Tests leave it off and drive
+    the worker themselves.
+    """
+    worker = Worker(conn, worker_id, workflows, lease=lease, heartbeat_every=heartbeat_every)
+    stop = threading.Event()
+
+    def poll_loop() -> None:
+        while not stop.is_set():
+            try:
+                if not worker.poll_once():
+                    time.sleep(poll_interval)
+            except Exception:  # one broken run must not kill the poll loop
+                time.sleep(poll_interval)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        if autostart:
+            threading.Thread(target=poll_loop, name="duragent-poll", daemon=True).start()
+        yield
+        stop.set()
+        worker.close()
+
+    app = FastAPI(title="duragent", version="0.1.0", lifespan=lifespan)
+    app.state.worker = worker
+    app.state.conn = conn
+
+    @app.post("/api/runs", status_code=202)
+    def create_run(body: CreateRunRequest) -> dict[str, Any]:
+        if body.workflow not in workflows:
+            raise HTTPException(status_code=400, detail=f"unknown workflow: {body.workflow}")
+        run_id = enqueue(conn, body.workflow, body.input)
+        return {"id": run_id, "status": "PENDING"}
+
+    @app.get("/api/runs/{run_id}")
+    def read_run(run_id: str) -> dict[str, Any]:
+        run = _require_run(conn, run_id)
+        return {
+            "id": run.id,
+            "workflow": run.workflow,
+            "status": run.status,
+            "steps": [
+                {
+                    "step": record.step_key,
+                    "status": record.status,
+                    "attempt": record.attempt,
+                    "error": record.error_text,
+                }
+                for record in list_steps(conn, run_id)
+            ],
+            "budget": _budget_view(conn, run_id),
+            "approvals": [_approval_view(a) for a in pending_approvals(conn, run_id)],
+        }
+
+    @app.get("/api/runs/{run_id}/approvals")
+    def read_approvals(run_id: str) -> list[dict[str, Any]]:
+        _require_run(conn, run_id)
+        return [_approval_view(a) for a in pending_approvals(conn, run_id)]
+
+    @app.post("/api/approvals/{approval_id}/approve")
+    def approve_one(approval_id: str, body: DecisionRequest | None = None) -> dict[str, Any]:
+        decision = body or DecisionRequest()
+        return _approval_view(_decide(approve, conn, approval_id, decision))
+
+    @app.post("/api/approvals/{approval_id}/reject")
+    def reject_one(approval_id: str, body: DecisionRequest | None = None) -> dict[str, Any]:
+        decision = body or DecisionRequest()
+        return _approval_view(_decide(reject, conn, approval_id, decision))
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
+
+
+def _require_run(conn, run_id: str):
+    run = get_run(conn, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"unknown run: {run_id}")
+    return run
+
+
+def _decide(decide, conn, approval_id: str, decision: DecisionRequest):
+    try:
+        return decide(conn, approval_id, by=decision.by, comment=decision.comment)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"unknown approval: {approval_id}") from None
+
+
+def _approval_view(approval) -> dict[str, Any]:
+    return {
+        "id": approval.id,
+        "run_id": approval.run_id,
+        "node": approval.node,
+        "reason": approval.reason,
+        "status": approval.status,
+        "decided_by": approval.decided_by,
+    }
+
+
+def _budget_view(conn, run_id: str) -> dict[str, Any] | None:
+    spent = usage(conn, run_id)
+    if spent is None:
+        return None
+    limits = budget_for(conn, run_id)
+    return {
+        "tokens": spent.tokens,
+        "cost": spent.cost,
+        "steps": spent.steps,
+        "max_cost": None if limits is None or limits.max_cost_micros is None
+        else limits.max_cost_micros / 1_000_000,
+        "max_steps": None if limits is None else limits.max_steps,
+    }

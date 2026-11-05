@@ -63,10 +63,9 @@ Duragent journals the node's **result** under a stable key and replays it. That 
 
 ## Status
 
-`0.1.0`, the Python port covers durable steps, the LangGraph wrapper, approvals, budgets and a
-worker queue — 31 tests, four runnable demos. Next: an HTTP API so a run can be started and
-approved from outside the process. The Java implementation is feature complete up to a demo HTTP
-API.
+`0.1.0`, the Python port covers durable steps, the LangGraph wrapper, approvals, budgets, a
+worker queue and an HTTP API — 36 tests, five runnable demos. The JVM implementation is feature
+complete up to the same demo API.
 
 ## 中文简介
 

@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Callable
 
+from duragent.runs import RUNNING, SUSPENDED, get_run, set_status
 from duragent.steps import Abort
 
 PENDING = "PENDING"
@@ -127,6 +128,13 @@ def _decide(conn, approval_id: str, status: str, by: str, comment: str | None,
     approval = _find(conn, approval_id)
     if approval is None:
         raise KeyError(f"unknown approval: {approval_id}")
+
+    # A decision un-parks the run: a worker can pick it up again and the gate
+    # will let it through (approved) or raise (rejected).
+    run = get_run(conn, approval.run_id)
+    if run is not None and run.status == SUSPENDED:
+        set_status(conn, approval.run_id, RUNNING, clock=clock)
+
     return approval
 
 
