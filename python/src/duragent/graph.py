@@ -14,9 +14,19 @@ from typing import Any, Callable
 
 from duragent.approvals import ApprovalRejected, ApprovalRequired, require_approval
 from duragent.budgets import charge as charge_budget
+from duragent.retry import RetriesExhausted, Retry, RetryLater
 from duragent.steps import DEFAULT_LEASE_SECONDS, StepInProgress, run_step
 
-__all__ = ["Journal", "new_run_id", "StepInProgress", "ApprovalRequired", "ApprovalRejected"]
+__all__ = [
+    "Journal",
+    "new_run_id",
+    "StepInProgress",
+    "ApprovalRequired",
+    "ApprovalRejected",
+    "Retry",
+    "RetryLater",
+    "RetriesExhausted",
+]
 
 
 def new_run_id() -> str:
@@ -64,6 +74,7 @@ class Journal:
         *,
         needs_approval: bool = False,
         reason: str | Callable[[Any], str] | None = None,
+        retry: Retry | None = None,
     ):
         """把 ``fn`` 包成一个"最多执行一次"的节点。
 
@@ -90,6 +101,7 @@ class Journal:
                     step_name,
                     lambda: self._work(state, fn),
                     before_execute=gate,
+                    retry=retry,
                     lease=self.lease,
                     clock=self.clock,
                 )

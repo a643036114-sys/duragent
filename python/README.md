@@ -107,6 +107,20 @@ curl localhost:8000/api/runs/<id>
 # {"status":"COMPLETED","steps":[plan, refund, notify]}
 ```
 
+## Retries
+
+```python
+journal.durable("call-llm", call_model, retry=Retry(max_attempts=4, base=1.0, multiplier=2.0))
+```
+
+Waits are 1s, 2s, 4s, capped by `max_delay`. While a step is backing off it raises `RetryLater`
+instead of running, so a model that returns 529 is not hammered. After `max_attempts` it raises
+`RetriesExhausted` and never executes again.
+
+No schema change is needed: the wait is computed from the `attempt` and `finished_at` the journal
+already stores. A worker keeps the lease during a backoff, and the lease expiring is what brings
+the run back — so the effective floor is the lease length.
+
 ## What it guarantees
 
 | Situation | Behaviour |
@@ -147,8 +161,9 @@ A runtime that hides its edges is worse than one that names them.
   needs `charge#1`, `charge#2`, ... until the runner owns that bookkeeping.
 - **The run id is the identity of the input.** Invoking a run again with a different payload
   replays the old results.
-- **No retry policy.** A `FAILED` step retries on the next call, immediately. Backoff is the
-  caller's job.
+- **Backoff is coarse when a worker is involved.** The step knows exactly when it is ready, but
+  the run only comes back when a worker's lease expires. Precise scheduling needs a per-run
+  "not before" column, which does not exist yet.
 - **Approvals never expire.** A run can wait forever; an expiry policy is not implemented.
 - **No schema migrations.** The tables are created if missing; an older schema is detected and
   refused with a clear error rather than silently misreading it. There is no upgrade path.

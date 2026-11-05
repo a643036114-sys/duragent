@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from duragent.db import Connection, IntegrityError
+from duragent.retry import RetriesExhausted, Retry, RetryLater
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
@@ -85,6 +86,7 @@ def run_step(
     fn: Callable[[], T],
     *,
     before_execute: Callable[[], None] | None = None,
+    retry: Retry | None = None,
     lease: float = DEFAULT_LEASE_SECONDS,
     clock: Callable[[], float] = time.time,
 ) -> T:
@@ -92,12 +94,15 @@ def run_step(
 
     * first call  -> claim the step, run ``fn``, store the result
     * later calls -> return the stored result, ``fn`` is never called
-    * a failure   -> recorded as FAILED, the next call retries it
+    * a failure   -> recorded as FAILED, retried according to ``retry``
     * an abort    -> the claim is released, as if the step never started
     * a crash     -> the lease expires, another worker takes the step over
 
     ``before_execute`` is the gate: it runs only when the step is really about to
     execute (never on a replay), and raising from it aborts the step.
+
+    ``retry`` turns a recent failure into :class:`RetryLater` instead of running
+    again immediately, and :class:`RetriesExhausted` once the attempts are used up.
     """
     if not isinstance(step_name, str) or not step_name.strip():
         raise ValueError("step_name must be a non-empty string")
@@ -123,6 +128,12 @@ def run_step(
             raise StepInProgress(f"{run_id}/{step_name} is already running in another worker")
         _claim(conn, "status = 'RUNNING' AND lease_until < ?", run_id, step_name, now, lease_until, now)
     else:  # FAILED
+        if retry is not None:
+            if existing.attempt >= retry.max_attempts:
+                raise RetriesExhausted(run_id, step_name, existing.attempt, existing.error_text)
+            ready_at = (existing.finished_at or 0.0) + retry.delay_for(existing.attempt)
+            if now < ready_at:
+                raise RetryLater(run_id, step_name, ready_at - now)
         _claim(conn, "status = 'FAILED'", run_id, step_name, now, lease_until)
 
     try:

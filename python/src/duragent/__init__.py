@@ -34,6 +34,7 @@ from duragent.budgets import (
 )
 from duragent.db import connect, init_schema
 from duragent.graph import Journal, new_run_id
+from duragent.retry import RetriesExhausted, Retry, RetryLater
 from duragent.runs import (
     CANCELED,
     COMPLETED,
@@ -97,6 +98,9 @@ __all__ = [
     "COMPLETED",
     "FAILED",
     "CANCELED",
+    "Retry",
+    "RetryLater",
+    "RetriesExhausted",
 ]
 
 

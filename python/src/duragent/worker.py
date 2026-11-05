@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 from duragent.approvals import ApprovalRequired
 from duragent.budgets import BudgetExceeded
+from duragent.retry import RetryLater
 from duragent.runs import (
     CANCELED,
     COMPLETED,
@@ -69,6 +70,7 @@ class Worker:
 
         self._in_flight.add(run_id)
         run = get_run(self.conn, run_id)
+        keep_lease = False
         try:
             if run is None:
                 raise LookupError(f"run {run_id} disappeared after it was claimed")
@@ -76,6 +78,10 @@ class Worker:
             if handler is None:
                 raise LookupError(f"no handler for workflow '{run.workflow}'")
             handler(run_id, run.input)
+        except RetryLater:
+            # The step is backing off. Keep the lease: it expires on its own and
+            # becomes the timer, so the run is not re-claimed in a hot loop.
+            keep_lease = True
         except ApprovalRequired:
             set_status(self.conn, run_id, SUSPENDED, clock=self.clock)
         except BudgetExceeded:
@@ -87,7 +93,8 @@ class Worker:
             set_status(self.conn, run_id, COMPLETED, clock=self.clock)
         finally:
             self._in_flight.discard(run_id)
-            release(self.conn, run_id, self.worker_id)
+            if not keep_lease:
+                release(self.conn, run_id, self.worker_id)
         return True
 
     def drain(self, max_runs: int = 100) -> int:
