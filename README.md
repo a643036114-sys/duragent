@@ -10,6 +10,9 @@ starts, so a crash replays finished work instead of repeating it.
 *A three-node agent crashes in the middle. The restart replays the finished node: the model is not
 called twice, the refund is not sent twice.*
 
+📖 **Why this exists** — [你的 Agent 会重复扣钱吗？我给 LangGraph 加了一层"步骤日志"](https://juejin.cn/post/7705396726358114346)：
+一次退款发了两次的事故复盘，以及三句 SQL 怎么解决。（中文）
+
 ```python
 from duragent import Journal, connect, new_run_id
 
